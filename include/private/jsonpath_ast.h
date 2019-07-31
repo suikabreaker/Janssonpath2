@@ -1,24 +1,7 @@
-#ifndef JANSSONPATH_PRIVATE_H
-#define JANSSONPATH_PRIVATE_H
-#include <assert.h>
-#include <stdbool.h>
+#ifndef JSONPATH_AST_H
+#define JSONPATH_AST_H
 
 #include "jansson.h"
-#include "janssonpath_conf.h"
-
-#ifdef GCC
-#define EXPORT __attribute__((visibility ("default")))
-#define IMPORT __attribute__((visibility ("default")))
-#define LOCAL __attribute__((visibility ("hidden")))
-#elif defined MSVC
-#define EXPORT __declspec(dllexport)
-#define IMPORT __declspec(dllimport)
-#define LOCAL 
-#else
-#define EXPORT
-#define IMPORT
-#define LOCAL
-#endif
 
 // structures below are not visiable external. in interface there's only jsonpath_t*.
 
@@ -118,9 +101,5 @@ struct jsonpath_t {
 		path_arbitrary_t arbitrary;
 	};
 };
-
-extern json_malloc_t LOCAL do_malloc;
-extern json_free_t LOCAL do_free;
-
 
 #endif

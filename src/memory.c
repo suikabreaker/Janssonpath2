@@ -1,5 +1,4 @@
-#include "janssonpath_private.h"
-#include "memory.h"
+#include "jansson_memory.h"
 
 static void* json_default_malloc(size_t len);
 static void json_default_free(void* mem);

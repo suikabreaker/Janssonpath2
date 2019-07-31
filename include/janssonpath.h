@@ -2,6 +2,7 @@
 #define JANSSONPATH_H
 #include "jansson.h"
 #include "janssonpath_conf.h"
+#include "janssonpath_error.h"
 
 struct jsonpath_t;
 typedef struct jsonpath_t jsonpath_t;
