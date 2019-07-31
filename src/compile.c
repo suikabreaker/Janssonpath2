@@ -1,6 +1,8 @@
+#include <string.h>
 #include "private/common.h"
 #include "private/jsonpath_ast.h"
-#include "private/memory.h"
+#include "private/jansson_memory.h"
+#include "private/lexeme.h"
 
 // todo: add optional support for wildcard and regular expression
 // we allow wild card in subscribe string indexing like ["test_*"], but not in dot indexing
@@ -36,8 +38,8 @@ static path_index_t build_filter_index(jsonpath_t* filter) {
 	return ret;
 }
 
-static path_index_t build_range_index(jsonpath_t* s_begin, jsonpath_t* end) {
-	path_index_t ret = { INDEX_SUB_RANGE, {.range = {s_begin, end}} };
+static path_index_t build_range_index(jsonpath_t* w_begin, jsonpath_t* end) {
+	path_index_t ret = { INDEX_SUB_RANGE, {.range = {w_begin, end}} };
 	return ret;
 }
 
@@ -106,7 +108,7 @@ static void unary_release(path_unary_t unary){
 	jsonpath_release(unary.node);
 }
 
-static jsonpath_t* build_binary(path_unary_tag_t type, jsonpath_t* lhs, jsonpath_t* rhs) {
+static jsonpath_t* build_binary(path_binary_tag_t type, jsonpath_t* lhs, jsonpath_t* rhs) {
 	path_binary_t real_node = { type, lhs, rhs };
 	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));
 	ret->tag = JSON_BINARY;
@@ -147,6 +149,7 @@ static void arbitray_release(path_arbitrary_t arbitrary){
 	for(i=0;i<arbitrary.size;++i){
 		jsonpath_release(arbitrary.nodes[i]);
 	}
+	do_free(arbitrary.func_name);
 	do_free(arbitrary.nodes);
 }
 
@@ -194,3 +197,118 @@ void EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 	do_free(jsonpath);
 }
 
+#define w_begin (*pw_begin)
+static string_slice word_peek;
+
+extern int LOCAL binary_precedence[BINARY_MAX + 1] = {
+	8,8,9,9,9,
+	4,3,2,1,0,7,7,
+	5,5,6,6,6,6,
+	8,
+#ifdef JANSSONPATH_SUPPORT_REGEX
+	5,
+#endif
+	- 1
+};
+
+static const int binary_precedence_max = 9;
+
+static const char mul_op_sequnce[][3] = {
+	"&&","||","<<",">>",
+	"==","!=","<=",">=",
+	"++",
+#ifdef JANSSONPATH_SUPPORT_REGEX
+		"=~",
+#endif // JANSSONPATH_SUPPORT_REGEX
+};
+
+static const char mul_op_sequnce_value[] = {
+	BINARY_AND,BINARY_OR,BINARY_LSH,BINARY_RSH,
+	BINARY_EQ,BINARY_NE,BINARY_LE,BINARY_GE,
+	BINARY_LIST_CON,
+#ifdef JANSSONPATH_SUPPORT_REGEX
+	BINARY_REGEX,
+#endif // JANSSONPATH_SUPPORT_REGEX
+};
+
+static string_slice next_word_with_merge(
+	const char** pw_begin, const char* w_end, jsonpath_error_t* error
+) {
+	string_slice word1 = next_nonspace_lexeme(&w_begin, w_end, error);
+	if (error->code || is_eof(word1)) return word1;
+
+	const char* backup_w_begin = w_begin;
+	jsonpath_error_t backup_error = *error;
+	string_slice word2 = next_lexeme(&w_begin, w_end, error);
+	
+
+
+	size_t i;
+	if(!error->code) {
+		for (i = 0; i < sizeof(mul_op_sequnce) / sizeof(mul_op_sequnce[0]); ++i) {
+			if (is_punctor(word1, mul_op_sequnce[i][0]) && is_punctor(word2, mul_op_sequnce[i][1])) {
+				string_slice ret = { word1.begin,word2.end };
+				return ret;
+			}
+		}
+	}
+	pw_begin = backup_w_begin;
+	*error = backup_error;
+	return word1;
+}
+
+#define init_peek() do{word_peek=next_word_with_merge(&w_begin, w_end, error);}while(0)
+#define go_next init_peek
+
+static path_binary_tag_t map_to_bin_op(string_slice slice) {
+	static const char single_key[] = "+-*/%^&|<>";
+	static const path_binary_tag_t single_value[] = {
+		BINARY_ADD,BINARY_MNU,BINARY_MUL,BINARY_DIV,BINARY_REMINDER,BINARY_BITXOR,BINARY_BITAND,BINARY_BITOR,BINARY_LT,BINARY_GT
+	};
+
+	size_t i;
+	for (i = 0; i < sizeof(single_key) / sizeof(char); ++i) {
+		if (is_punctor(word_peek, single_key[i])) {
+			return single_value[i];
+		}
+	}
+
+	// maybe bad practices
+	if (slice.end - slice.begin < 2) return BINARY_MAX;
+	for (i = 0; i < sizeof(mul_op_sequnce) / sizeof(mul_op_sequnce[0]); ++i) {
+		if(!strncmp(mul_op_sequnce[i],slice.begin,2)){
+			return mul_op_sequnce_value[i];
+		}
+	}
+		
+	return BINARY_MAX;
+}
+
+static jsonpath_t* parse_path(const char* pw_begin, const char* w_end, jsonpath_error_t* error) {
+}
+
+static jsonpath_t* parse_unary(const char* pw_begin, const char* w_end, jsonpath_error_t* error) {
+}
+
+#define child_node(down_grade, w_begin, w_end, precedence, error) (down_grade?parse_unary(&w_begin, w_end, error):parse_binary(&w_begin, w_end, precedence + 1, error))
+
+// they have lower precedence than all others
+static jsonpath_t* parse_binary(const char* pw_begin, const char* w_end, int precedence, jsonpath_error_t* error){
+	bool down_grade = binary_precedence_max == precedence;
+	jsonpath_t* left_node = child_node(down_grade, w_begin, w_end, precedence, error);
+	path_binary_tag_t bin_op = map_to_bin_op(word_peek);
+	int curr_precedence = binary_precedence[bin_op];
+	while (curr_precedence == precedence) {
+		go_next();
+		jsonpath_t* right_node = child_node(down_grade, w_begin, w_end, precedence, error);
+		left_node = build_binary(bin_op, left_node, right_node);
+	}
+	return left_node;
+}
+
+jsonpath_t* EXPORT jsonpath_compile(const char* jsonpath_begin, const char* jsonpath_end, jsonpath_error_t* error) {
+	const char* w_begin = jsonpath_begin; const char* w_end = jsonpath_end;
+	init_peek();
+	if (error->code) return NULL;
+	return parse_binary(&w_begin, w_end, 0, error);
+}

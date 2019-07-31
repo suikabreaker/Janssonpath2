@@ -47,10 +47,10 @@ typedef struct path_unary_t {
 typedef enum path_binary_tag_t {
 	// + | - | * | / | %
 	BINARY_ADD, BINARY_MNU, BINARY_MUL, BINARY_DIV, BINARY_REMINDER,
-	//  & | '|' | ^ | && | '||' 
-	BINARY_BITAND, BINARY_BITOR, BINARY_BITXOR, BINARY_AND, BINARY_OR,
-	// < | == | > | <= | >=
-	BINARY_LT, BINARY_EQ, BINARY_GT, BINARY_LE, BINARY_GE,
+	//  & | '|' | ^ | && | '||' | '<<' | '>>'
+	BINARY_BITAND, BINARY_BITXOR, BINARY_BITOR,  BINARY_AND, BINARY_OR, BINARY_LSH, BINARY_RSH,
+	// == | != | < | > | <= | >=
+	BINARY_EQ, BINARY_NE, BINARY_LT, BINARY_GT, BINARY_LE, BINARY_GE,
 	// ++
 	BINARY_LIST_CON,
 #ifdef JANSSONPATH_SUPPORT_REGEX
@@ -64,6 +64,8 @@ typedef struct path_binary_t {
 	jsonpath_t* lhs;
 	jsonpath_t* rhs;
 }path_binary_t;
+
+extern int LOCAL binary_precedence[BINARY_MAX + 1];
 
 typedef enum path_arbitrary_tag_t {
 	// function call | // should we support to form JSON nodes in janssonpath?

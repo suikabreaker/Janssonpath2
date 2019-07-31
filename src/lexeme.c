@@ -1,4 +1,3 @@
-#include <wctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include "private/common.h"
@@ -29,6 +28,7 @@ static const jsonpath_error_t zero_length_escape_error(const char* pos) {
 	return ret;
 }
 
+// why not simply convert it to wchar_t string?
 static wchar_t mb_peek;
 
 static void mb_peek_init(const char** ps_begin, const char* s_end, jsonpath_error_t* error) {
