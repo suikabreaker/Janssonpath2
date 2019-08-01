@@ -37,7 +37,7 @@ add_library(janssonpath_static STATIC ${ALL_SRC} ${ALL_INC})
 set_target_properties(janssonpath_static PROPERTIES
   COMPILE_FLAGS -DJANSSONPATH_STATIC_DEFINE)
 
-OPTION(JANSSONPATH_SUPPORT_REGEX OFF)
+OPTION(JANSSONPATH_SUPPORT_REGEX OFF "Whether build jansson with regular expression support")
 
 if(JANSSONPATH_SUPPORT_REGEX)
 	set(REGEX_ENGINE "system_regex" CACHE STRING "Engine for regular expression support")
@@ -45,7 +45,7 @@ if(JANSSONPATH_SUPPORT_REGEX)
 	if(REGEX_ENGINE STREQUAL "system_regex")
 		CHECK_INCLUDE_FILE(regex.h SYSTEM_REGEX CMAKE_REQUIRED_FLAGS)
 		if(NOT SYSTEM_REGEX)
-			message("No regex.h found. switching to PCRE2." )
+			message("No regex.h found. Switching to PCRE2." )
 			set(REGEX_ENGINE "PCRE2")
 		endif()
 	endif()
@@ -62,7 +62,9 @@ set_target_properties(lexeme_test PROPERTIES
   COMPILE_FLAGS -DJANSSONPATH_STATIC_DEFINE)
 
 option(JANSSONPATH_INSTALL "Generate installation target" ON)
-CMAKE_DEPENDENT_OPTION(INSTALL_WITH_SYMBOL "Install debug symbols" ON "JANSSONPATH_INSTALL" OFF)
+if (WIN32)
+	CMAKE_DEPENDENT_OPTION(DEBUG_SYMBOL "Install debug symbols" ON "JANSSONPATH_INSTALL" OFF)
+endif()
 if (JANSSONPATH_INSTALL)
 	install(TARGETS janssonpath
 		LIBRARY DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
@@ -77,8 +79,9 @@ if (JANSSONPATH_INSTALL)
 		INCLUDES DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
 	install(FILES ${JANSSONPATH_HDR_PUBLIC}
 		DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
-
-	install(FILES $<TARGET_PDB_FILE:janssonpath> DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" OPTIONAL)
+	if(INSTALL_WITH_SYMBOL)
+		install(FILES $<TARGET_PDB_FILE:janssonpath> DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" OPTIONAL)
+	endif()
 endif()
 
 if (MSVC)
