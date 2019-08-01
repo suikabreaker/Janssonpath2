@@ -4,20 +4,7 @@
 #include <stdbool.h>
 
 #include "janssonpath_conf.h"
-
-#ifdef GCC
-#define EXPORT __attribute__((visibility ("default")))
-#define IMPORT __attribute__((visibility ("default")))
-#define LOCAL __attribute__((visibility ("hidden")))
-#elif defined MSVC
-#define EXPORT __declspec(dllexport)
-#define IMPORT __declspec(dllimport)
-#define LOCAL 
-#else
-#define EXPORT
-#define IMPORT
-#define LOCAL
-#endif
+#include "janssonpath_export.h"
 
 // end==NULL means till the end(NULL terminated)
 // end is one pass the last

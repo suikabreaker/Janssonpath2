@@ -65,7 +65,7 @@ typedef struct path_binary_t {
 	jsonpath_t* rhs;
 }path_binary_t;
 
-extern int LOCAL binary_precedence[BINARY_MAX + 1];
+extern int JANSSONPATH_NO_EXPORT binary_precedence[BINARY_MAX + 1];
 
 typedef enum path_arbitrary_tag_t {
 	// function call | // should we support to form JSON nodes in janssonpath?

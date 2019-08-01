@@ -7,7 +7,7 @@ typedef struct jsonpath_error_t {
 	void* extra;
 }jsonpath_error_t;
 
-extern jsonpath_error_t LOCAL jsonpath_error_ok;
-extern jsonpath_error_t LOCAL jsonpath_error_unknown;
+extern jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_ok;
+extern jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_unknown;
 
 #endif // !JANSSONPATH_ERROR

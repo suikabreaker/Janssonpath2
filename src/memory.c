@@ -1,9 +1,9 @@
-#include "jansson_memory.h"
+#include "private/jansson_memory.h"
 
 static void* json_default_malloc(size_t len);
 static void json_default_free(void* mem);
-extern json_malloc_t LOCAL do_malloc = json_default_malloc;
-extern json_free_t LOCAL do_free = json_default_free;
+extern json_malloc_t JANSSONPATH_NO_EXPORT do_malloc = json_default_malloc;
+extern json_free_t JANSSONPATH_NO_EXPORT do_free = json_default_free;
 
 static void* json_default_malloc(size_t len) {
 	if (!do_malloc) {
@@ -14,20 +14,20 @@ static void* json_default_malloc(size_t len) {
 	return do_malloc(len);
 }
 
-static void LOCAL json_default_free(void* mem) {
+static void JANSSONPATH_NO_EXPORT json_default_free(void* mem) {
 	if (!do_free) {
 		json_get_alloc_funcs(&do_malloc, &do_free);
 		if (!do_malloc) do_malloc = malloc;
 		if (!do_free) do_free = free;
 	}
-	free_fn(mem);
+	do_free(mem);
 }
 
-void EXPORT json_path_set_alloc_funcs(json_malloc_t malloc_fn, json_free_t free_fn) {
+void JANSSONPATH_EXPORT json_path_set_alloc_funcs(json_malloc_t malloc_fn, json_free_t free_fn) {
 	do_malloc = malloc_fn;
 	do_free = free_fn;
 }
-void EXPORT json_path_get_alloc_funcs(json_malloc_t* malloc_fn, json_free_t* free_fn) {
+void JANSSONPATH_EXPORT json_path_get_alloc_funcs(json_malloc_t* malloc_fn, json_free_t* free_fn) {
 	*malloc_fn = do_malloc;
 	*free_fn = do_free;
 }

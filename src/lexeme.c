@@ -114,7 +114,7 @@ static string_slice get_string(
 
 // note that continuous spaces are considered single word
 // any punctor charactors are themself a word of length 1
-string_slice LOCAL next_lexeme(
+string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t *error
 ) {
 	if(!(ps_begin && s_begin)){
@@ -170,7 +170,7 @@ string_slice LOCAL next_lexeme(
 	return make_slice(start, s_begin);
 }
 
-string_slice LOCAL next_nonspace_lexeme(
+string_slice JANSSONPATH_NO_EXPORT next_nonspace_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 ){
 	string_slice ret = empty_word;

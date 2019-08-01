@@ -4,10 +4,10 @@
 #include <wctype.h>
 #include <ctype.h>
 
-string_slice LOCAL next_lexeme(
+string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 );
-string_slice LOCAL next_nonspace_lexeme(
+string_slice JANSSONPATH_NO_EXPORT next_nonspace_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 );
 

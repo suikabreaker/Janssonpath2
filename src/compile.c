@@ -13,7 +13,7 @@
 // and potentially it can be optimized out with RVO
 // functions below steals ownership of passed in values. remember to incref them if it will be used elsewhere.
 
-void EXPORT jsonpath_release(jsonpath_t* jsonpath);
+void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath);
 
 // use static to expect inline optimization
 // pass by value for release functions, because them are small to pass, and safe to copy(as they are not referenced by address)
@@ -174,7 +174,7 @@ static void single_release(path_single_t single){
 	json_decref(single.constant);
 }
 
-void EXPORT jsonpath_release(jsonpath_t* jsonpath) {
+void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 	switch (jsonpath->tag) {
 	case JSON_SINGLE:
 		single_release(jsonpath->single);
@@ -200,7 +200,7 @@ void EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 #define w_begin (*pw_begin)
 static string_slice word_peek;
 
-extern int LOCAL binary_precedence[BINARY_MAX + 1] = {
+extern int JANSSONPATH_NO_EXPORT binary_precedence[BINARY_MAX + 1] = {
 	8,8,9,9,9,
 	4,3,2,1,0,7,7,
 	5,5,6,6,6,6,
@@ -252,7 +252,7 @@ static string_slice next_word_with_merge(
 			}
 		}
 	}
-	pw_begin = backup_w_begin;
+	w_begin = backup_w_begin;
 	*error = backup_error;
 	return word1;
 }
@@ -284,16 +284,18 @@ static path_binary_tag_t map_to_bin_op(string_slice slice) {
 	return BINARY_MAX;
 }
 
-static jsonpath_t* parse_path(const char* pw_begin, const char* w_end, jsonpath_error_t* error) {
+static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	return NULL;
 }
 
-static jsonpath_t* parse_unary(const char* pw_begin, const char* w_end, jsonpath_error_t* error) {
+static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	return NULL;
 }
 
 #define child_node(down_grade, w_begin, w_end, precedence, error) (down_grade?parse_unary(&w_begin, w_end, error):parse_binary(&w_begin, w_end, precedence + 1, error))
 
 // they have lower precedence than all others
-static jsonpath_t* parse_binary(const char* pw_begin, const char* w_end, int precedence, jsonpath_error_t* error){
+static jsonpath_t* parse_binary(const char** pw_begin, const char* w_end, int precedence, jsonpath_error_t* error){
 	bool down_grade = binary_precedence_max == precedence;
 	jsonpath_t* left_node = child_node(down_grade, w_begin, w_end, precedence, error);
 	path_binary_tag_t bin_op = map_to_bin_op(word_peek);
@@ -306,8 +308,9 @@ static jsonpath_t* parse_binary(const char* pw_begin, const char* w_end, int pre
 	return left_node;
 }
 
-jsonpath_t* EXPORT jsonpath_compile(const char* jsonpath_begin, const char* jsonpath_end, jsonpath_error_t* error) {
-	const char* w_begin = jsonpath_begin; const char* w_end = jsonpath_end;
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, const char* jsonpath_end, jsonpath_error_t* error) {
+	const char** pw_begin = &jsonpath_begin;
+	const char* w_end = jsonpath_end;
 	init_peek();
 	if (error->code) return NULL;
 	return parse_binary(&w_begin, w_end, 0, error);
