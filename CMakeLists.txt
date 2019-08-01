@@ -16,7 +16,7 @@ include_directories("${PROJECT_BINARY_DIR}")
 
 find_package(JANSSON REQUIRED)
 
-include_directories ("${PROJECT_SOURCE_DIR}/include")
+include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories(${JANSSON_INCLUDE_DIRS})
 
 set(COMMON_SRC src/error.c src/memory.c)
@@ -54,6 +54,9 @@ if(JANSSONPATH_SUPPORT_REGEX)
 		target_link_libraries(janssonpath ${PCRE2_LIBRARIES})
 		target_include_directories(janssonpath PUBLIC ${PCRE2_INCLUDE_DIRS})
 	endif()
+else()
+	set(REGEX_ENGINE "none" CACHE STRING "Engine for regular expression support. Tog JANSSONPATH_SUPPORT_REGEX and reconfiure to choose.")
+	set_property(CACHE REGEX_ENGINE PROPERTY STRINGS none)
 endif()
 
 add_executable(lexeme_test src/lexeme_test.c ${LEXEME_SRC} ${COMMON_SRC} ${COMMON_INC} ${LEXEME_INC})

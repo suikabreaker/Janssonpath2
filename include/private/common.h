@@ -2,6 +2,9 @@
 #define JANSSONPATH_PRIVATE_H
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <errno.h>
+#include <limits.h>
 
 #include "janssonpath_conf.h"
 #include "janssonpath_export.h"
