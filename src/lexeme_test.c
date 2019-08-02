@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <locale.h>
 #include <string.h>
-#include "private\lexeme.h"
+#include "private/lexeme.h"
 
 int main(int argc, char**argv){
 	setlocale(LC_ALL, "chs_china.936"); // windows console default to GBK

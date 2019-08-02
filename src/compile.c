@@ -200,7 +200,7 @@ void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 #define w_begin (*pw_begin)
 static string_slice word_peek;
 
-extern int JANSSONPATH_NO_EXPORT binary_precedence[BINARY_MAX + 1] = {
+static const int JANSSONPATH_NO_EXPORT binary_precedence[BINARY_MAX + 1] = {
 	8,8,9,9,9,
 	4,3,2,1,0,7,7,
 	5,5,6,6,6,6,

@@ -1,12 +1,14 @@
+project (janssonpath)
+set (VERSION_MAJOR 2)
+set (VERSION_MINOR 0)
+
 cmake_minimum_required (VERSION 2.6)
 include(GenerateExportHeader)
 include(CheckIncludeFile)
 include(CMakeDependentOption)
-project (janssonpath)
+include(CheckFunctionExists)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
-set (VERSION_MAJOR 2)
-set (VERSION_MINOR 0)
 
 configure_file (
 	"${PROJECT_SOURCE_DIR}/include/janssonpath_conf.h.in"
@@ -18,6 +20,7 @@ find_package(JANSSON REQUIRED)
 
 include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories(${JANSSON_INCLUDE_DIRS})
+check_function_exists(iswascii HAVE_ISWASCII)
 
 set(COMMON_SRC src/error.c src/memory.c)
 set(COMMON_INC ${PROJECT_BINARY_DIR}/janssonpath_conf.h ${PROJECT_BINARY_DIR}/janssonpath_export.h include/private/common.h include/private/jansson_memory.h)

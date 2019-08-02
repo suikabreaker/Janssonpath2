@@ -4,6 +4,10 @@
 #include <wctype.h>
 #include <ctype.h>
 
+#ifndef HAVE_ISWASCII
+#define iswascii isascii
+#endif
+
 string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 );

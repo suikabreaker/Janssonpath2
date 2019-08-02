@@ -2,8 +2,8 @@
 
 static void* json_default_malloc(size_t len);
 static void json_default_free(void* mem);
-extern json_malloc_t JANSSONPATH_NO_EXPORT do_malloc = json_default_malloc;
-extern json_free_t JANSSONPATH_NO_EXPORT do_free = json_default_free;
+json_malloc_t JANSSONPATH_NO_EXPORT do_malloc = json_default_malloc;
+json_free_t JANSSONPATH_NO_EXPORT do_free = json_default_free;
 
 static void* json_default_malloc(size_t len) {
 	if (!do_malloc) {
