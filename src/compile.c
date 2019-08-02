@@ -65,7 +65,7 @@ static void index_release(path_index_t path){
 }
 
 static jsonpath_t* build_indexes(jsonpath_t* root){
-	static const indexes_capacity_default = 4;
+	static const size_t indexes_capacity_default = 4;
 	path_index_t* indexes = do_malloc(sizeof(path_index_t) * indexes_capacity_default);
 	path_indexes_t real_node = { root, indexes, 0, indexes_capacity_default };
 	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));
@@ -122,7 +122,7 @@ static void binary_release(path_binary_t binary) {
 }
 
 static jsonpath_t* build_func_call(char * func_name){ // note func_name will be deleted, make copy!
-	static const nodes_capacity_default = 4;// it should be sufficient for most call
+	static const size_t nodes_capacity_default = 4;// it should be sufficient for most call
 	jsonpath_t** nodes = do_malloc(sizeof(jsonpath_t*) * nodes_capacity_default);
 	path_arbitrary_t real_node = { ARB_FUNC, func_name, nodes, 0, nodes_capacity_default };
 	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));

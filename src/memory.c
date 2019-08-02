@@ -14,7 +14,7 @@ static void* json_default_malloc(size_t len) {
 	return do_malloc(len);
 }
 
-static void JANSSONPATH_NO_EXPORT json_default_free(void* mem) {
+static void json_default_free(void* mem) {
 	if (!do_free) {
 		json_get_alloc_funcs(&do_malloc, &do_free);
 		if (!do_malloc) do_malloc = malloc;
