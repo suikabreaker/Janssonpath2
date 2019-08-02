@@ -8,6 +8,8 @@
 #define iswascii isascii
 #endif
 
+void JANSSONPATH_EXPORT jsonpath_set_encode_recoverable(bool value);
+
 string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 );

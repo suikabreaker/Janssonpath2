@@ -1,13 +1,13 @@
 #ifndef JANSSONPATH_ERROR
 #define JANSSONPATH_ERROR
 
-typedef struct jsonpath_error_t {
-	int code;
-	const char* reason;
-	void* extra;
-}jsonpath_error_t;
+#include <stdbool.h>
 
-extern jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_ok;
-extern jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_unknown;
+typedef struct jsonpath_error_t {
+	bool abort; // true if not recoverable
+	int code; // error code. 0 for OK
+	const char* reason; // Null-terminated string for description text of error
+	const void* extra; // extra information. typically position of error occuring
+}jsonpath_error_t;
 
 #endif // !JANSSONPATH_ERROR

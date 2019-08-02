@@ -20,7 +20,7 @@ typedef enum path_index_tag_t {
 typedef struct path_index_t {
 	path_index_tag_t tag;
 	union {
-		// NULL for *, "#" for length, minus for counting back, INT_MAX for end(one pass the last)
+		// NULL for *, JSON_NULL for #, minus for counting back, INT_MAX for end(one pass the last)
 		// path_index_t is responsible to lifetime of objects below
 		json_t* simple_index; // including recursive
 		jsonpath_t* range[2]; // [begin: end]
@@ -71,7 +71,7 @@ typedef enum path_arbitrary_tag_t {
 }path_arbitrary_tag_t;
 typedef struct path_arbitrary_t {
 	path_arbitrary_tag_t tag;
-	char* func_name;
+	json_t* func_name; // should be json_string
 	jsonpath_t** nodes;
 	size_t size;
 	size_t capacity;

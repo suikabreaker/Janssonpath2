@@ -14,17 +14,20 @@ static string_slice make_slice(const char* s_begin, const char* s_end) {
 
 #define IS_END(begin, end) (begin == end || !*begin)
 
-#define check_error() do{if (error->code) return empty_word;}while(0)
+#define check_error() do{if (error->abort) return empty_word;}while(0)
 
-#define go_next() do{mb_next(&s_begin, s_end, error);check_error();}while(0)
+// maybe not good practice
+#define go_next() do{ mb_next(&s_begin, s_end, error); check_error(); if(error->code==0x31) { ++s_begin; continue; } }while(0)
 
-static const jsonpath_error_t encode_error(const char *pos){
-	jsonpath_error_t ret = { 0x31, strerror(errno), (void*)pos };
-	return ret;
+static bool encode_recoverable = false;
+
+void JANSSONPATH_EXPORT jsonpath_set_encode_recoverable(bool value){
+	encode_recoverable = value;
 }
 
-static const jsonpath_error_t zero_length_escape_error(const char* pos) {
-	jsonpath_error_t ret = { 0x23, "escape sequnce with zero length", (void*)pos };
+// should we make encode_error recoverable?
+static jsonpath_error_t encode_error(const char *pos){
+	jsonpath_error_t ret = { !encode_recoverable, 0x31, strerror(errno), (void*)pos };
 	return ret;
 }
 
@@ -58,6 +61,9 @@ static wchar_t mb_read(const char** ps_begin, const char* s_end, jsonpath_error_
 	return ret;
 }
 
+jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_eof_escape(const char* position);
+jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_zero_length_escape(const char* position);
+
 static string_slice get_string(
 	const char** ps_begin, const char* s_end, jsonpath_error_t* error
 ){
@@ -72,17 +78,12 @@ static string_slice get_string(
 	go_next();
 	while (true) {
 		if (!mb_peek) {  // unexpected input s_ending before string s_ends
-			error->code = 0x21;
-			error->reason = "unenclosing quotation mark";
-			error->extra = (void*)start;
+			*error = jsonpath_error_eof_escape(start);
 			return empty_word;
 		}
 		if (mb_peek == L'\\') {  // escape
 			go_next();
 			if (!mb_peek) {
-				error->code = 0x22;
-				error->reason = "unexpected eof while encounting escape";
-				error->extra = (void*)s_begin;
 				return empty_word;
 			}else if(mb_peek == L'x'){
 				go_next();
@@ -91,7 +92,7 @@ static string_slice get_string(
 					go_next();
 				}
 				if(i==0){
-					*error = zero_length_escape_error(s_begin);
+					*error = jsonpath_error_zero_length_escape(s_begin);
 					return empty_word;
 				}
 			}else if(iswdigit(mb_peek)){
@@ -107,7 +108,7 @@ static string_slice get_string(
 			return make_slice(start, s_begin);
 		}else {
 			go_next();
-			if (error->code) return empty_word;
+			if (error->abort) return empty_word;
 		}
 	}
 }
@@ -118,6 +119,7 @@ string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	const char** ps_begin, const char* s_end, jsonpath_error_t *error
 ) {
 	if(!(ps_begin && s_begin)){
+		error->abort = true;
 		error->code = 0x11;
 		error->reason = "ps_begin is NULL or pointing to NULL";
 		error->extra = NULL;

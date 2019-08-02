@@ -1,4 +1,7 @@
 #include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <limits.h>
 #include "private/common.h"
 #include "private/jsonpath_ast.h"
 #include "private/jansson_memory.h"
@@ -47,7 +50,7 @@ static void index_release(path_index_t path){
 	switch(path.tag){
 	case INDEX_DOT:
 	case INDEX_DOT_RECURSIVE:
-		json_decref(path.simple_index);
+		if (path.simple_index)json_decref(path.simple_index);
 		break;
 	case INDEX_SUB_EXP:
 	case INDEX_FILTER:
@@ -121,7 +124,7 @@ static void binary_release(path_binary_t binary) {
 	jsonpath_release(binary.rhs);
 }
 
-static jsonpath_t* build_func_call(char * func_name){ // note func_name will be deleted, make copy!
+static jsonpath_t* build_func_call(json_t* func_name){
 	static const size_t nodes_capacity_default = 4;// it should be sufficient for most call
 	jsonpath_t** nodes = do_malloc(sizeof(jsonpath_t*) * nodes_capacity_default);
 	path_arbitrary_t real_node = { ARB_FUNC, func_name, nodes, 0, nodes_capacity_default };
@@ -149,7 +152,7 @@ static void arbitray_release(path_arbitrary_t arbitrary){
 	for(i=0;i<arbitrary.size;++i){
 		jsonpath_release(arbitrary.nodes[i]);
 	}
-	do_free(arbitrary.func_name);
+	json_decref(arbitrary.func_name);
 	do_free(arbitrary.nodes);
 }
 
@@ -169,12 +172,21 @@ static jsonpath_t* make_curr() {
 	return ret;
 }
 
+static jsonpath_t* make_const(json_t* constant) {
+	path_single_t real_node = { SINGLE_CONST, constant };
+	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));
+	ret->tag = JSON_SINGLE;
+	ret->single = real_node;
+	return ret;
+}
+
 static void single_release(path_single_t single){
 	if (single.tag != SINGLE_CONST)return; // json_decref on null is safe, should we remove this condition?
 	json_decref(single.constant);
 }
 
 void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
+	if (!jsonpath) return;
 	switch (jsonpath->tag) {
 	case JSON_SINGLE:
 		single_release(jsonpath->single);
@@ -200,6 +212,7 @@ void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 #define w_begin (*pw_begin)
 static string_slice word_peek;
 
+// larger the number, higher the precedence
 static const int binary_precedence[BINARY_MAX + 1] = {
 	8,8,9,9,9,
 	4,3,2,1,0,7,7,
@@ -218,11 +231,11 @@ static const char mul_op_sequnce[][3] = {
 	"==","!=","<=",">=",
 	"++",
 #ifdef JANSSONPATH_SUPPORT_REGEX
-		"=~",
+	"=~",
 #endif // JANSSONPATH_SUPPORT_REGEX
 };
 
-static const char mul_op_sequnce_value[] = {
+static const path_binary_tag_t mul_op_sequnce_value[] = {
 	BINARY_AND,BINARY_OR,BINARY_LSH,BINARY_RSH,
 	BINARY_EQ,BINARY_NE,BINARY_LE,BINARY_GE,
 	BINARY_LIST_CON,
@@ -235,16 +248,14 @@ static string_slice next_word_with_merge(
 	const char** pw_begin, const char* w_end, jsonpath_error_t* error
 ) {
 	string_slice word1 = next_nonspace_lexeme(&w_begin, w_end, error);
-	if (error->code || is_eof(word1)) return word1;
+	if (error->abort || is_eof(word1)) return word1;
 
 	const char* backup_w_begin = w_begin;
 	jsonpath_error_t backup_error = *error;
 	string_slice word2 = next_lexeme(&w_begin, w_end, error);
-	
-
 
 	size_t i;
-	if(!error->code) {
+	if(!error->abort) {
 		for (i = 0; i < sizeof(mul_op_sequnce) / sizeof(mul_op_sequnce[0]); ++i) {
 			if (is_punctor(word1, mul_op_sequnce[i][0]) && is_punctor(word2, mul_op_sequnce[i][1])) {
 				string_slice ret = { word1.begin,word2.end };
@@ -252,13 +263,51 @@ static string_slice next_word_with_merge(
 			}
 		}
 	}
+
+	if(is_punctor(word1,'.')&& is_punctor(word2, '.')){
+		string_slice ret = { word1.begin,word2.end };
+		return ret;
+	}
+
 	w_begin = backup_w_begin;
 	*error = backup_error;
 	return word1;
 }
 
-#define init_peek() do{word_peek=next_word_with_merge(&w_begin, w_end, error);}while(0)
-#define go_next init_peek
+#define go_next() do{word_peek=next_word_with_merge(&w_begin, w_end, error);}while(is_space(word_peek)&&!error->abort)
+#define init_peek go_next
+
+typedef enum path_indicate{
+	PATH_IND_DOT, PATH_IND_DDOT, PATH_IND_LBR, PATH_IND_MAX
+}path_indicate;
+
+static path_indicate map_to_path_ind(string_slice slice) {
+	if (is_punctor(slice, '.')) return PATH_IND_DOT;
+	if (is_punctor(slice, '.')) return PATH_IND_DOT;
+
+	if (slice.end - slice.begin != 2) return PATH_IND_MAX;
+	if (!strncmp("..", slice.begin, 2)) {
+		return PATH_IND_DDOT;
+	}
+	
+	return PATH_IND_MAX;
+}
+
+static path_unary_tag_t map_to_unary_op(string_slice slice) {
+	static const char single_key[] = "!+-&*~";
+	static const path_unary_tag_t single_value[] = {
+		UNARY_NOT, UNARY_POS, UNARY_NEG, UNARY_TO_LIST, UNARY_FROM_LIST, UNARY_BITNOT
+	};
+
+	size_t i;
+	for (i = 0; i < sizeof(single_key) / sizeof(char); ++i) {
+		if (is_punctor(word_peek, single_key[i])) {
+			return single_value[i];
+		}
+	}
+
+	return UNARY_MAX;
+}
 
 static path_binary_tag_t map_to_bin_op(string_slice slice) {
 	static const char single_key[] = "+-*/%^&|<>";
@@ -274,7 +323,7 @@ static path_binary_tag_t map_to_bin_op(string_slice slice) {
 	}
 
 	// maybe bad practices
-	if (slice.end - slice.begin < 2) return BINARY_MAX;
+	if (slice.end - slice.begin != 2) return BINARY_MAX;
 	for (i = 0; i < sizeof(mul_op_sequnce) / sizeof(mul_op_sequnce[0]); ++i) {
 		if(!strncmp(mul_op_sequnce[i],slice.begin,2)){
 			return mul_op_sequnce_value[i];
@@ -284,12 +333,308 @@ static path_binary_tag_t map_to_bin_op(string_slice slice) {
 	return BINARY_MAX;
 }
 
+static jsonpath_t* parse_binary(const char** pw_begin, const char* w_end, int precedence, jsonpath_error_t* error);
+static jsonpath_t* match_brackets(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	size_t count = 0;
+	while(is_punctor(word_peek, '(')){
+		count++;
+		go_next();
+	}
+	jsonpath_t* ret = parse_binary(&w_begin, w_end, 0, error);
+	if (!ret) return ret;
+	while (is_punctor(word_peek, ')') && count) {
+		count--;
+		go_next();
+	}
+	if (count != 0) {
+		jsonpath_release(ret);
+		error->abort = true;
+		error->code = 0x61;
+		error->reason = "unmacthed bracket";
+		error->extra = (void*)w_begin;
+		return NULL;
+	}
+	return ret;
+}
+
+static jsonpath_t* parse_arbitray(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	assert(is_identifier(word_peek)); // should we accept string/calculated function name?
+	
+	jsonpath_t* func_call = build_func_call(json_stringn(word_peek.begin, SLICE_SIZE(word_peek)));
+	go_next();
+	if(!is_punctor(word_peek,'(')){// should we accept named constant? shoulde we accept emit () for function with no parameter?
+		return func_call;
+	}
+	go_next();
+	while(!is_punctor(word_peek, ')')){
+		jsonpath_t* argument = parse_binary(&w_begin, w_end, 0, error);
+		if (!argument) {
+			jsonpath_release(func_call);
+			return NULL;
+		}
+		add_oprand_arbitrary(func_call, argument);
+		if (!is_punctor(word_peek, ',') && !is_punctor(word_peek, ')')) { // yes, we accept extra ',' on end of argument list, like func(1,2,)
+			jsonpath_release(func_call);
+			return NULL;
+		}
+		if (is_punctor(word_peek, ',')) go_next();
+	}
+	go_next();
+	return func_call;
+}
+
+static const path_index_t error_index = { INDEX_MAX,{.simple_index = NULL} };
+
+static path_index_t parse_index_sub(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	// brackets in ?(exp) (exp) can be omitted, so they could be treat as simple expressions in grammar
+	if (is_punctor(word_peek, '?')) {
+		go_next();
+		jsonpath_t* filter = parse_binary(&w_begin, w_end, 0, error);
+		if (!filter) return error_index;
+		path_index_t ret = { INDEX_FILTER,{.expression = filter} };
+		return ret;
+	}
+	else {
+		jsonpath_t* range[2] = { NULL,NULL };
+		bool is_range = false;
+		if (!is_punctor(word_peek, ':')) {
+			range[0] = parse_binary(&w_begin, w_end, 0, error);
+			if (!range[0]) {
+				return error_index;
+			}
+		}
+		if (is_punctor(word_peek, ':')) {
+			is_range = true;
+			go_next();
+			if (!is_punctor(word_peek, ']')) { // should we allow [:] ? it's simply a translation from array to collection
+				range[1] = parse_binary(&w_begin, w_end, 0, error);
+				if (!range[1]) {
+					jsonpath_release(range[0]);
+					return error_index;
+				}
+			}
+		}
+		return is_range ? build_range_index(range[0], range[1]) : build_subexp_index(range[0]);
+	}
+}
+
+static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, const char* w_end, jsonpath_error_t* error){
+	go_next();
+	switch (path_ind) {
+	case PATH_IND_DOT:
+	case PATH_IND_DDOT: {
+		json_t* index_simple;
+		if (is_identifier(word_peek)) {
+			index_simple = json_stringn(word_peek.begin, SLICE_SIZE(word_peek));
+		}
+		else if (is_punctor(word_peek, '*')) {
+			index_simple = NULL;
+		}
+		else if (is_punctor(word_peek, '#')) {
+			index_simple = json_null();
+		}
+		else { // should we support string here?
+			error->abort = true;
+			error->code = 0x62;
+			error->reason = "expecting simple index(*/#/identifier)";
+			error->extra = w_begin;
+			return error_index;
+		}
+		go_next();
+		return (path_ind == PATH_IND_DOT) ? build_simple_index(index_simple) : build_recursive_index(index_simple);
+	}
+	case PATH_IND_LBR: {
+		path_index_t ret = parse_index_sub(pw_begin, w_end, error);
+		if (ret.tag == INDEX_MAX) return ret;
+		if(is_punctor(word_peek,']')){
+			go_next();
+			return ret;
+		}else{
+			index_release(ret);
+			error->abort = true;
+			error->code = 0x65;
+			error->reason = "expecting ']'";
+			error->extra = w_begin;
+			return error_index;
+		}
+	}
+	default:
+		assert(false);
+		return error_index;
+	}
+}
+
 static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
+	jsonpath_t* root = NULL;
+	if (is_identifier(word_peek)) {
+		root = parse_arbitray(pw_begin, w_end, error);
+	}else if(is_punctor(word_peek, '(')) {
+		root = match_brackets(pw_begin, w_end, error);
+	}else if (is_punctor(word_peek, '$')) {
+		go_next();
+		root = make_root();
+	}else if (is_punctor(word_peek, '@')) {
+		go_next();
+		root = make_curr();
+	}else{
+		root = make_curr(); // root node can be omitted and default to @
+	}
+	if (!root) return NULL;
+	jsonpath_t* path = build_indexes(root);
+
+	path_indicate path_ind = map_to_path_ind(word_peek);
+	while(path_ind!=PATH_IND_MAX){
+		path_index_t index = parse_index(path_ind, pw_begin, w_end, error);
+		if (index.tag == INDEX_MAX) {
+			jsonpath_release(path);
+			return NULL; // that's why i prefer exceptions
+		}
+		add_index(path, index);
+		path_ind = map_to_path_ind(word_peek);
+	}
+	return root;
+}
+
+jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_eof_escape(const char* position);
+jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_zero_length_escape(const char* position);
+
+static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
+	assert(slice.begin);
+	const char delima = slice.begin[0];
+	assert(delima == '"' || delima == '\'');
+
+	const char* iter = slice.begin + 1;
+	const char* const end = slice.begin + SLICE_SIZE(slice);
+
+	char* buffer = do_malloc(sizeof(char) * SLICE_SIZE(slice)); // sufficient as we do not include '"' '\''
+	char* buffer_iter = buffer;
+	json_t* ret = NULL;
+	for (iter = slice.begin; iter != end && *iter;) {
+		if (*iter == '\\') {  // escape
+			++iter;
+			assert(iter != end && *iter); // already checked by lexeme.c
+			if (*iter == 'x' || isdigit(*iter)) {
+				bool is_hex = (*iter == 'x');
+				if(is_hex) ++iter;
+				const int max_len = is_hex ? 2 : 3;
+				int (*pred)(int) = is_hex ? isxdigit : isdigit;
+				int radix = is_hex ? 16 : 10;
+				int i;
+				char number[4] = { 0 };
+				for (i = 0; i < 2 && iter != end && !*iter && pred(*iter); i++) {
+					number[i] = *iter;
+					++iter;
+				}
+				if (i == 0) {
+					*error = jsonpath_error_zero_length_escape(iter);
+					break;
+				}
+
+				long value = strtol(number, NULL, radix);
+				if (value > UCHAR_MAX) {
+					error->abort = true;
+					error->code = 0x86;
+					error->reason = "not representable charactor in escape sequnence";
+					error->extra = (void*)iter;
+					break;
+				}
+				*buffer_iter = (char)value;
+				++buffer_iter;
+			}else if(*iter == '\\' || *iter == '\'' || *iter == '\"' || *iter == '\?'){
+				*buffer_iter = *iter;
+				++buffer_iter;
+				++iter;
+			}else if (*iter == '0') {
+				*buffer_iter = '\0';
+				++buffer_iter;
+				++iter;
+			}else{
+				static const char esc_map[26] = {//abfnrtv
+					0,['a' - 'a'] = '\a',['f' - 'a'] = '\f',['n' - 'a'] = '\n',['r' - 'a'] = '\r',['t' - 'a'] = '\t',['v' - 'a'] = '\v'
+				};
+				char result = 0;
+				if (isalpha(*iter))result = esc_map[*iter - 'a'];
+				if(!result){
+					error->abort = true;
+					error->code = 0x84;
+					error->reason = "unknown escape";
+					error->extra = (void*)iter;
+					break;
+				}
+				*buffer_iter = result;
+				++buffer_iter;
+				++iter;
+			}
+		}else if (*iter == delima) {
+			// we do not fill zero as we are using json_stringn
+			break;
+		}else {
+			*buffer_iter = *iter;
+			++buffer_iter;
+			++iter;
+		}
+	}
+
+	if (!error->abort) {
+		assert(*iter == delima && iter + 1 == end);
+		ret = json_stringn(buffer, buffer_iter - buffer);
+	}
+	do_free(buffer);
+	return ret;
+}
+
+static json_t* try_parse_constant(string_slice slice, jsonpath_error_t* error){
+	if (is_number(slice)) {
+		size_t i;
+		bool is_real_number = false;
+		for (i = 0; i < SLICE_SIZE(slice); ++i) {
+			if (slice.begin[i] == '.') {
+				is_real_number = true;
+				break;
+			}
+		}
+		const char* begin = slice.begin;
+		char* end = (char*)slice.end; // stupid stdlib
+		if(is_real_number){
+			double value = strtod(begin, &end);
+			assert(end == slice.end);
+			return json_real(value);
+		}else{
+			long long value = strtoll(begin, &end, 10);
+			assert(end == slice.end);
+			return json_integer(value);
+		}
+	}
+	else if (is_string(slice)) {
+		return unescaped_string(slice, error);
+	}
+	else if (slice_cstr_cmp(slice, "true")) {
+		return json_true();
+	}
+	else if (slice_cstr_cmp(slice, "false")) {
+		return json_false();
+	}
 	return NULL;
 }
 
 static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
-	return NULL;
+	path_unary_tag_t unary_op = map_to_unary_op(word_peek);
+	if (unary_op == UNARY_MAX) return parse_arbitray(pw_begin, w_end, error);
+	else{
+		go_next();
+		jsonpath_t* inner = NULL;
+		json_t* constant = try_parse_constant(word_peek, error);
+		if(error->abort){
+			return NULL;
+		}
+		if(constant){
+			inner = make_const(constant);
+		}else{
+			inner = parse_path(pw_begin, w_end, error);
+			if (!inner) return NULL;
+		}
+		return build_unary(unary_op, inner);
+	}
 }
 
 #define child_node(down_grade, w_begin, w_end, precedence, error) (down_grade?parse_unary(&w_begin, w_end, error):parse_binary(&w_begin, w_end, precedence + 1, error))
@@ -298,20 +643,47 @@ static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpat
 static jsonpath_t* parse_binary(const char** pw_begin, const char* w_end, int precedence, jsonpath_error_t* error){
 	bool down_grade = binary_precedence_max == precedence;
 	jsonpath_t* left_node = child_node(down_grade, w_begin, w_end, precedence, error);
+	if (!left_node) return NULL;
 	path_binary_tag_t bin_op = map_to_bin_op(word_peek);
 	int curr_precedence = binary_precedence[bin_op];
 	while (curr_precedence == precedence) {
 		go_next();
 		jsonpath_t* right_node = child_node(down_grade, w_begin, w_end, precedence, error);
+		if(!right_node){
+			jsonpath_release(left_node);
+			return NULL;
+		}
 		left_node = build_binary(bin_op, left_node, right_node);
+		bin_op = map_to_bin_op(word_peek);
+		curr_precedence = binary_precedence[bin_op];
 	}
 	return left_node;
 }
 
-JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, const char* jsonpath_end, jsonpath_error_t* error) {
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begin, const char** pjsonpath_end, jsonpath_error_t* error) {
+	*error = jsonpath_error_ok;
 	const char** pw_begin = &jsonpath_begin;
-	const char* w_end = jsonpath_end;
+	const char* w_end = pjsonpath_end ? *pjsonpath_end : NULL;
 	init_peek();
-	if (error->code) return NULL;
-	return parse_binary(&w_begin, w_end, 0, error);
+	jsonpath_t* ret = NULL;
+
+	// do ... while(0) works as try, break as throw, below as finally
+	do {
+		if (error->abort) break;
+		ret = parse_binary(&w_begin, w_end, 0, error);
+		if (!ret) break;
+		if (!pjsonpath_end) {
+			if (w_begin != w_end) {
+				jsonpath_release(ret);
+				error->abort = true;
+				error->code = 0x91;
+				error->reason = "jsonpath not ended correctly";
+				error->extra = (void*)w_begin;
+			}
+		}
+	} while (0);
+	if(pjsonpath_end){
+		*pjsonpath_end = w_begin;
+	}
+	return ret;
 }
