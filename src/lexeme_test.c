@@ -24,7 +24,7 @@ int main(int argc, char**argv){
 	}
 	puts("");
 	const char* test2 = test;
-	char* test2end = test + strlen(test2);
+	const char* test2end = test + strlen(test2);
 	for (word = next_lexeme(&test2, test2end, &error); !(IS_SLICE_EMPTY(word) && !error.code); word = next_lexeme(&test2, test2end, &error)) {
 		if (error.code) {
 			const char* pos = error.extra;
