@@ -14,6 +14,10 @@ int main(int argc, char** argv) {
 
 	jsonpath_error_t error;
 	jsonpath_t* jsonpath = jsonpath_compile_ranged(test, NULL, &error);
+	if(error.code){
+		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
+		printf("At position [%zd]\n", (const char*)error.extra - test);
+	}
 	puts("compiled");
 	jsonpath_release(jsonpath);
 	puts("released");

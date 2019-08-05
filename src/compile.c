@@ -339,12 +339,17 @@ static jsonpath_t* match_brackets(const char** pw_begin, const char* w_end, json
 	while(is_punctor(word_peek, '(')){
 		count++;
 		go_next();
+		if (error->abort) return NULL;
 	}
 	jsonpath_t* ret = parse_binary(&w_begin, w_end, 0, error);
 	if (!ret) return ret;
 	while (is_punctor(word_peek, ')') && count) {
 		count--;
 		go_next();
+		if (error->abort) {
+			jsonpath_release(ret);
+			return NULL;
+		}
 	}
 	if (count != 0) {
 		jsonpath_release(ret);
@@ -361,25 +366,32 @@ static jsonpath_t* parse_arbitray(const char** pw_begin, const char* w_end, json
 	assert(is_identifier(word_peek)); // should we accept string/calculated function name?
 	
 	jsonpath_t* func_call = build_func_call(json_stringn(word_peek.begin, SLICE_SIZE(word_peek)));
-	go_next();
-	if(!is_punctor(word_peek,'(')){// should we accept named constant? shoulde we accept emit () for function with no parameter?
-		return func_call;
-	}
-	go_next();
-	while(!is_punctor(word_peek, ')')){
-		jsonpath_t* argument = parse_binary(&w_begin, w_end, 0, error);
-		if (!argument) {
-			jsonpath_release(func_call);
-			return NULL;
+	do{
+		go_next();
+		if (error->abort) break;
+		if (!is_punctor(word_peek, '(')) {// should we accept named constant? shoulde we accept emit () for function with no parameter?
+			return func_call;
 		}
-		add_oprand_arbitrary(func_call, argument);
-		if (!is_punctor(word_peek, ',') && !is_punctor(word_peek, ')')) { // yes, we accept extra ',' on end of argument list, like func(1,2,)
-			jsonpath_release(func_call);
-			return NULL;
+		go_next();
+		if (error->abort) break;
+		while (!is_punctor(word_peek, ')')) {
+			jsonpath_t* argument = parse_binary(&w_begin, w_end, 0, error);
+			if (!argument) break;
+			add_oprand_arbitrary(func_call, argument);
+			if (!is_punctor(word_peek, ',') && !is_punctor(word_peek, ')')) { // yes, we accept extra ',' on end of argument list, like func(1,2,)
+				break;
+			}
+			if (is_punctor(word_peek, ',')) {
+				go_next();
+				if (error->abort) break;
+			}
 		}
-		if (is_punctor(word_peek, ',')) go_next();
+		go_next();
+		if (error->abort) break;
+	} while (0);
+	if(error->abort){
+		jsonpath_release(func_call);
 	}
-	go_next();
 	return func_call;
 }
 
@@ -389,6 +401,7 @@ static path_index_t parse_index_sub(const char** pw_begin, const char* w_end, js
 	// brackets in ?(exp) (exp) can be omitted, so they could be treat as simple expressions in grammar
 	if (is_punctor(word_peek, '?')) {
 		go_next();
+		if (error->abort) return error_index;
 		jsonpath_t* filter = parse_binary(&w_begin, w_end, 0, error);
 		if (!filter) return error_index;
 		path_index_t ret = { INDEX_FILTER,{.expression = filter} };
@@ -396,34 +409,36 @@ static path_index_t parse_index_sub(const char** pw_begin, const char* w_end, js
 	}
 	else {
 		jsonpath_t* range[2] = { NULL,NULL };
-		bool is_range = false;
-		if (!is_punctor(word_peek, ':')) {
-			range[0] = parse_binary(&w_begin, w_end, 0, error);
-			if (!range[0]) {
-				return error_index;
+		do{
+			bool is_range = false;
+			if (!is_punctor(word_peek, ':')) {
+				range[0] = parse_binary(&w_begin, w_end, 0, error);
+				if (!range[0]) break;
 			}
-		}
-		if (is_punctor(word_peek, ':')) {
-			is_range = true;
-			go_next();
-			if (!is_punctor(word_peek, ']')) { // should we allow [:] ? it's simply a translation from array to collection
-				range[1] = parse_binary(&w_begin, w_end, 0, error);
-				if (!range[1]) {
-					jsonpath_release(range[0]);
-					return error_index;
+			if (is_punctor(word_peek, ':')) {
+				is_range = true;
+				go_next();
+				if (error->abort) break;
+				if (!is_punctor(word_peek, ']')) { // should we allow [:] ? it's simply a translation from array to collection
+					range[1] = parse_binary(&w_begin, w_end, 0, error);
+					if (!range[1]) break;
 				}
 			}
-		}
-		return is_range ? build_range_index(range[0], range[1]) : build_subexp_index(range[0]);
+			return is_range ? build_range_index(range[0], range[1]) : build_subexp_index(range[0]);
+		} while (0);
+		jsonpath_release(range[0]);
+		jsonpath_release(range[1]);
+		return error_index;
 	}
 }
 
 static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, const char* w_end, jsonpath_error_t* error){
 	go_next();
+	if (error->abort) return error_index;
 	switch (path_ind) {
 	case PATH_IND_DOT:
 	case PATH_IND_DDOT: {
-		json_t* index_simple;
+		json_t* index_simple = NULL;
 		if (is_identifier(word_peek)) {
 			index_simple = json_stringn(word_peek.begin, SLICE_SIZE(word_peek));
 		}
@@ -441,6 +456,10 @@ static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, c
 			return error_index;
 		}
 		go_next();
+		if (error->abort) {
+			json_decref(index_simple);
+			return error_index;
+		}
 		return (path_ind == PATH_IND_DOT) ? build_simple_index(index_simple) : build_recursive_index(index_simple);
 	}
 	case PATH_IND_LBR: {
@@ -448,6 +467,10 @@ static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, c
 		if (ret.tag == INDEX_MAX) return ret;
 		if(is_punctor(word_peek,']')){
 			go_next();
+			if (error->abort) {
+				index_release(ret);
+				return error_index;
+			}
 			return ret;
 		}else{
 			index_release(ret);
@@ -473,9 +496,11 @@ static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath
 		root = match_brackets(pw_begin, w_end, error);
 	}else if (is_punctor(word_peek, '$')) {
 		go_next();
+		if (error->abort) return NULL;
 		root = make_root();
 	}else if (is_punctor(word_peek, '@')) {
 		go_next();
+		if (error->abort) return NULL;
 		root = make_curr();
 	}else{
 		is_empty = true;
@@ -632,6 +657,7 @@ static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpat
 	path_unary_tag_t unary_op = map_to_unary_op(word_peek);
 	if (unary_op != UNARY_MAX){
 		go_next();
+		if (error->abort) return NULL;
 	}
 	jsonpath_t* inner = NULL;
 	json_t* constant = try_parse_constant(word_peek, error);
@@ -640,6 +666,10 @@ static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpat
 	}
 	if(constant){
 		go_next();
+		if (error->abort) {
+			json_decref(constant);
+			return NULL;
+		}
 		inner = make_const(constant);
 	}else{
 		inner = parse_path(pw_begin, w_end, error);
@@ -661,14 +691,16 @@ static jsonpath_t* parse_binary(const char** pw_begin, const char* w_end, int pr
 	int curr_precedence = binary_precedence[bin_op];
 	while (curr_precedence == precedence) {
 		go_next();
+		if (error->abort) break;
 		jsonpath_t* right_node = child_node(down_grade, w_begin, w_end, precedence, error);
-		if(!right_node){
-			jsonpath_release(left_node);
-			return NULL;
-		}
+		if (!right_node)break;
 		left_node = build_binary(bin_op, left_node, right_node);
 		bin_op = map_to_bin_op(word_peek);
 		curr_precedence = binary_precedence[bin_op];
+	}
+	if(error->abort){
+		jsonpath_release(left_node);
+		return NULL;
 	}
 	return left_node;
 }
