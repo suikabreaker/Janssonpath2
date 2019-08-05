@@ -156,7 +156,7 @@ static void arbitray_release(path_arbitrary_t arbitrary){
 	do_free(arbitrary.nodes);
 }
 
-static jsonpath_t* make_root(){
+static jsonpath_t* make_root(void){
 	path_single_t real_node = { SINGLE_ROOT, NULL };
 	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));
 	ret->tag = JSON_SINGLE;
@@ -164,7 +164,7 @@ static jsonpath_t* make_root(){
 	return ret;
 }
 
-static jsonpath_t* make_curr() {
+static jsonpath_t* make_curr(void) {
 	path_single_t real_node = { SINGLE_CURR, NULL };
 	jsonpath_t* ret = do_malloc(sizeof(jsonpath_t));
 	ret->tag = JSON_SINGLE;
@@ -203,6 +203,11 @@ void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 	case JSON_ARBITRAY:
 		arbitray_release(jsonpath->arbitrary);
 		break;
+#ifdef JANSSONPATH_CONSTANT_FOLD
+	case JSON_CONSTANT:
+		jsonpath_decref(jsonpath->constant_result);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -301,7 +306,7 @@ static path_unary_tag_t map_to_unary_op(string_slice slice) {
 
 	size_t i;
 	for (i = 0; i < sizeof(single_key) / sizeof(char); ++i) {
-		if (is_punctor(word_peek, single_key[i])) {
+		if (is_punctor(slice, single_key[i])) {
 			return single_value[i];
 		}
 	}
@@ -324,7 +329,7 @@ static path_binary_tag_t map_to_bin_op(string_slice slice) {
 
 	// maybe bad practices
 	if (slice.end - slice.begin != 2) return BINARY_MAX;
-	for (i = 0; i < sizeof(mul_op_sequnce) / sizeof(mul_op_sequnce[0]); ++i) {
+	for (i = 0; i < sizeof(single_value) / sizeof(single_value[0]); ++i) {
 		if(!strncmp(mul_op_sequnce[i],slice.begin,2)){
 			return mul_op_sequnce_value[i];
 		}
@@ -557,7 +562,7 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 				int radix = is_hex ? 16 : 10;
 				int i;
 				char number[4] = { 0 };
-				for (i = 0; i < 2 && iter != end && !*iter && pred(*iter); i++) {
+				for (i = 0; i < max_len && iter != end && !*iter && pred(*iter); i++) {
 					number[i] = *iter;
 					++iter;
 				}
@@ -731,5 +736,16 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 	if(pjsonpath_end){
 		*pjsonpath_end = w_begin;
 	}
+	return ret;
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, jsonpath_error_t* error){
+	return jsonpath_compile_ranged(jsonpath_begin, NULL, error);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_parse(const char** p_jsonpath_begin, jsonpath_error_t* error) {
+	const char* end = NULL;
+	jsonpath_t* ret= jsonpath_compile_ranged(*p_jsonpath_begin, &end, error);
+	*p_jsonpath_begin = end;
 	return ret;
 }

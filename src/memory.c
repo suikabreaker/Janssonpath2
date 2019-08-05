@@ -19,11 +19,11 @@ static void json_default_free(void* mem) {
 	do_free(mem);
 }
 
-void JANSSONPATH_EXPORT json_path_set_alloc_funcs(json_malloc_t malloc_fn, json_free_t free_fn) {
+void JANSSONPATH_EXPORT jsonpath_set_alloc_funcs(json_malloc_t malloc_fn, json_free_t free_fn) {
 	do_malloc = malloc_fn;
 	do_free = free_fn;
 }
-void JANSSONPATH_EXPORT json_path_get_alloc_funcs(json_malloc_t* malloc_fn, json_free_t* free_fn) {
+void JANSSONPATH_EXPORT jsonpath_get_alloc_funcs(json_malloc_t* malloc_fn, json_free_t* free_fn) {
 	*malloc_fn = do_malloc;
 	*free_fn = do_free;
 }

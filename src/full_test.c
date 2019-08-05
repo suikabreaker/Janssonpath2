@@ -21,7 +21,14 @@ int main(int argc, char** argv) {
 		printf("At position [%zd]\n", (const char*)error.extra - test);
 	}
 	puts("compiled");
+	jsonpath_evaluate(NULL, jsonpath, NULL, &error);
+	if (error.code) {
+		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
+		printf("At position [%zd]\n", (const char*)error.extra - test);
+	}
+	puts("evaluated");
 	jsonpath_release(jsonpath);
+	json_path_get(NULL, NULL);
 	puts("released");
 	return 0;
 }

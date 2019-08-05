@@ -3,6 +3,10 @@
 
 #include "jansson.h"
 
+#ifdef JANSSONPATH_CONSTANT_FOLD
+#include "janssonpath_evaluate.h"
+#endif
+
 // structures below are not visiable external. in interface there's only jsonpath_t*.
 
 // we avoid to contain jsonpath_t* node here as $.a[1].tag is a really commonly seen pattern.
@@ -88,7 +92,11 @@ typedef struct path_single_t {
 
 typedef enum jsonpath_tag_t {
 	// single | index | unary | binary | arbitray
-	JSON_SINGLE, JSON_INDEX, JSON_UNARY, JSON_BINARY, JSON_ARBITRAY
+	JSON_SINGLE, JSON_INDEX, JSON_UNARY, JSON_BINARY, JSON_ARBITRAY,
+#ifdef JANSSONPATH_CONSTANT_FOLD
+	JSON_CONSTANT,
+#endif
+	JSON_MAX
 }jsonpath_tag_t;
 struct jsonpath_t {
 	jsonpath_tag_t tag;
@@ -99,6 +107,9 @@ struct jsonpath_t {
 		path_unary_t unary;
 		path_binary_t binary;
 		path_arbitrary_t arbitrary;
+#ifdef JANSSONPATH_CONSTANT_FOLD
+		jsonpath_result_t constant_result;
+#endif
 	};
 };
 
