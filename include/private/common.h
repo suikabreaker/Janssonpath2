@@ -20,7 +20,7 @@ typedef struct string_slice {
 
 #define IS_SLICE_EMPTY(slice) (!(slice).begin)
 #define FMT_SLICE ".*s"
-#define SLICE_SIZE(slice) ((slice).end?((slice).end-(slice).begin):strlen(slice.begin))
+#define SLICE_SIZE(slice) ((slice).begin?((slice).end?((slice).end-(slice).begin):strlen(slice.begin)):0)
 #define SLCIE_OUT(slice) (int)SLICE_SIZE(slice), (slice).begin
 
 static int slice_cstr_cmp(string_slice slice, const char* c_str) {

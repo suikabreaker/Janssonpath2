@@ -283,7 +283,7 @@ typedef enum path_indicate{
 
 static path_indicate map_to_path_ind(string_slice slice) {
 	if (is_punctor(slice, '.')) return PATH_IND_DOT;
-	if (is_punctor(slice, '.')) return PATH_IND_DOT;
+	if (is_punctor(slice, '[')) return PATH_IND_LBR;
 
 	if (slice.end - slice.begin != 2) return PATH_IND_MAX;
 	if (!strncmp("..", slice.begin, 2)) {
@@ -466,6 +466,7 @@ static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, c
 
 static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
 	jsonpath_t* root = NULL;
+	bool is_empty = false;
 	if (is_identifier(word_peek)) {
 		root = parse_arbitray(pw_begin, w_end, error);
 	}else if(is_punctor(word_peek, '(')) {
@@ -477,6 +478,7 @@ static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath
 		go_next();
 		root = make_curr();
 	}else{
+		is_empty = true;
 		root = make_curr(); // root node can be omitted and default to @
 	}
 	if (!root) return NULL;
@@ -489,10 +491,19 @@ static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath
 			jsonpath_release(path);
 			return NULL; // that's why i prefer exceptions
 		}
+		is_empty = false;
 		add_index(path, index);
 		path_ind = map_to_path_ind(word_peek);
 	}
-	return root;
+	if(is_empty){
+		error->abort = true;
+		error->code = 0x88;
+		error->reason = "expecting path";
+		error->extra = w_begin;
+		jsonpath_release(root);
+		return NULL;
+	}
+	return path;
 }
 
 jsonpath_error_t JANSSONPATH_NO_EXPORT jsonpath_error_eof_escape(const char* position);
@@ -608,10 +619,10 @@ static json_t* try_parse_constant(string_slice slice, jsonpath_error_t* error){
 	else if (is_string(slice)) {
 		return unescaped_string(slice, error);
 	}
-	else if (slice_cstr_cmp(slice, "true")) {
+	else if (!slice_cstr_cmp(slice, "true")) {
 		return json_true();
 	}
-	else if (slice_cstr_cmp(slice, "false")) {
+	else if (!slice_cstr_cmp(slice, "false")) {
 		return json_false();
 	}
 	return NULL;
@@ -619,22 +630,24 @@ static json_t* try_parse_constant(string_slice slice, jsonpath_error_t* error){
 
 static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
 	path_unary_tag_t unary_op = map_to_unary_op(word_peek);
-	if (unary_op == UNARY_MAX) return parse_arbitray(pw_begin, w_end, error);
-	else{
+	if (unary_op != UNARY_MAX){
 		go_next();
-		jsonpath_t* inner = NULL;
-		json_t* constant = try_parse_constant(word_peek, error);
-		if(error->abort){
-			return NULL;
-		}
-		if(constant){
-			inner = make_const(constant);
-		}else{
-			inner = parse_path(pw_begin, w_end, error);
-			if (!inner) return NULL;
-		}
-		return build_unary(unary_op, inner);
 	}
+	jsonpath_t* inner = NULL;
+	json_t* constant = try_parse_constant(word_peek, error);
+	if(error->abort){
+		return NULL;
+	}
+	if(constant){
+		go_next();
+		inner = make_const(constant);
+	}else{
+		inner = parse_path(pw_begin, w_end, error);
+		if (!inner) return NULL;
+	}
+	jsonpath_t* ret = unary_op != UNARY_MAX ? build_unary(unary_op, inner) : inner;
+	return ret;
+	
 }
 
 #define child_node(down_grade, w_begin, w_end, precedence, error) (down_grade?parse_unary(&w_begin, w_end, error):parse_binary(&w_begin, w_end, precedence + 1, error))
@@ -672,14 +685,15 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 		if (error->abort) break;
 		ret = parse_binary(&w_begin, w_end, 0, error);
 		if (!ret) break;
-		if (!pjsonpath_end) {
-			if (w_begin != w_end) {
-				jsonpath_release(ret);
-				error->abort = true;
-				error->code = 0x91;
-				error->reason = "jsonpath not ended correctly";
-				error->extra = (void*)w_begin;
-			}
+		if ((pjsonpath_end && w_begin != w_end) ||
+			(!pjsonpath_end && *w_begin != '\0')
+			) {
+			jsonpath_release(ret);
+			ret = NULL;
+			error->abort = true;
+			error->code = 0x91;
+			error->reason = "jsonpath not ended correctly";
+			error->extra = (void*)w_begin;
 		}
 	} while (0);
 	if(pjsonpath_end){

@@ -145,13 +145,13 @@ string_slice JANSSONPATH_NO_EXPORT next_lexeme(
 	}
 
 	// dot or number - digit* [\.]? digit* which is not empty
-	while (!mb_peek && iswdigit(mb_peek)) {
+	while (mb_peek && iswdigit(mb_peek)) {
 		go_next();
 	}
-	if (!mb_peek && mb_peek == L'.') {
+	if (mb_peek && mb_peek == L'.') {
 		go_next();
 	}
-	while (!mb_peek && iswdigit(mb_peek)) {
+	while (mb_peek && iswdigit(mb_peek)) {
 		go_next();
 	}
 	if (s_begin != start) return make_slice(start, s_begin);

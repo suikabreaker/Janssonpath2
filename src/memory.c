@@ -6,20 +6,16 @@ json_malloc_t JANSSONPATH_NO_EXPORT do_malloc = json_default_malloc;
 json_free_t JANSSONPATH_NO_EXPORT do_free = json_default_free;
 
 static void* json_default_malloc(size_t len) {
-	if (!do_malloc) {
-		json_get_alloc_funcs(&do_malloc, &do_free);
-		if (!do_malloc) do_malloc = malloc;
-		if (!do_free) do_free = free;
-	}
+	json_get_alloc_funcs(&do_malloc, &do_free);
+	if (!do_malloc) do_malloc = malloc;
+	if (!do_free) do_free = free;
 	return do_malloc(len);
 }
 
 static void json_default_free(void* mem) {
-	if (!do_free) {
-		json_get_alloc_funcs(&do_malloc, &do_free);
-		if (!do_malloc) do_malloc = malloc;
-		if (!do_free) do_free = free;
-	}
+	json_get_alloc_funcs(&do_malloc, &do_free);
+	if (!do_malloc) do_malloc = malloc;
+	if (!do_free) do_free = free;
 	do_free(mem);
 }
 
