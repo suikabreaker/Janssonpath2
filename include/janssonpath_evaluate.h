@@ -16,6 +16,7 @@ typedef struct jsonpath_result_t {
 	bool is_collection : 1;
 	// A path generates left value which makes sense to modify; and operation like + - * / generates right value.
 	// Note that collection being left value means every element of it is a left value.
+	// It's for reference only, as some opration like to_list would lose information about left/right value of its content.
 	bool is_right_value : 1;
 	// Literals are constant; result of operation to constants are constant. It could be used for optimization.
 	// It could be used for optimization, and it tells you if it's safe to cache its value.
@@ -31,6 +32,7 @@ static jsonpath_result_t jsonpath_incref(jsonpath_result_t in) {
 #define jsonpath_decref(in) json_decref(in.value)
 
 // As a loose constrain, jsonpath_functions should not json_decref or modify its input. (json_incref is allowed)
+// jsonpath_function should return a new reference.
 typedef json_t* (*jsonpath_function)(json_t**, size_t);
 
 // names[i] <-> functions[i] is a one to one map.

@@ -41,7 +41,8 @@ typedef struct path_indexes_t {
 
 typedef enum path_unary_tag_t {
 	// ! | + | - | & | * | ~
-	UNARY_NOT, UNARY_POS, UNARY_NEG, UNARY_TO_LIST, UNARY_FROM_LIST, UNARY_BITNOT, UNARY_MAX
+	// from array is the same of .* for json_array
+	UNARY_NOT, UNARY_POS, UNARY_NEG, UNARY_TO_ARRAY, UNARY_FROM_ARRAY, UNARY_BITNOT, UNARY_MAX
 }path_unary_tag_t;
 typedef struct path_unary_t {
 	path_unary_tag_t tag;
@@ -51,12 +52,12 @@ typedef struct path_unary_t {
 typedef enum path_binary_tag_t {
 	// + | - | * | / | %
 	BINARY_ADD, BINARY_MNU, BINARY_MUL, BINARY_DIV, BINARY_REMINDER,
-	//  & | '|' | ^ | && | '||' | '<<' | '>>'
+	//  & | ^ | '|' | && | '||' | '<<' | '>>'
 	BINARY_BITAND, BINARY_BITXOR, BINARY_BITOR,  BINARY_AND, BINARY_OR, BINARY_LSH, BINARY_RSH,
 	// == | != | < | > | <= | >=
 	BINARY_EQ, BINARY_NE, BINARY_LT, BINARY_GT, BINARY_LE, BINARY_GE,
 	// ++
-	BINARY_LIST_CON,
+	BINARY_ARRAY_CON,
 #ifdef JANSSONPATH_SUPPORT_REGEX
 	// =~
 	BINARY_REGEX,

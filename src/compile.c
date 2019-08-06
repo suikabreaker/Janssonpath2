@@ -185,7 +185,7 @@ static void single_release(path_single_t single){
 	json_decref(single.constant);
 }
 
-void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
+void JANSSONPATH_NO_EXPORT jsonpath_release_no_free(jsonpath_t* jsonpath) {
 	if (!jsonpath) return;
 	switch (jsonpath->tag) {
 	case JSON_SINGLE:
@@ -211,6 +211,10 @@ void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
 	default:
 		break;
 	}
+}
+
+void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath) {
+	jsonpath_release_no_free(jsonpath);
 	do_free(jsonpath);
 }
 
@@ -243,7 +247,7 @@ static const char mul_op_sequnce[][3] = {
 static const path_binary_tag_t mul_op_sequnce_value[] = {
 	BINARY_AND,BINARY_OR,BINARY_LSH,BINARY_RSH,
 	BINARY_EQ,BINARY_NE,BINARY_LE,BINARY_GE,
-	BINARY_LIST_CON,
+	BINARY_ARRAY_CON,
 #ifdef JANSSONPATH_SUPPORT_REGEX
 	BINARY_REGEX,
 #endif // JANSSONPATH_SUPPORT_REGEX
@@ -301,7 +305,7 @@ static path_indicate map_to_path_ind(string_slice slice) {
 static path_unary_tag_t map_to_unary_op(string_slice slice) {
 	static const char single_key[] = "!+-&*~";
 	static const path_unary_tag_t single_value[] = {
-		UNARY_NOT, UNARY_POS, UNARY_NEG, UNARY_TO_LIST, UNARY_FROM_LIST, UNARY_BITNOT
+		UNARY_NOT, UNARY_POS, UNARY_NEG, UNARY_TO_ARRAY, UNARY_FROM_ARRAY, UNARY_BITNOT
 	};
 
 	size_t i;
@@ -544,13 +548,13 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 	const char delima = slice.begin[0];
 	assert(delima == '"' || delima == '\'');
 
-	const char* iter = slice.begin + 1;
+	const char* iter;
 	const char* const end = slice.begin + SLICE_SIZE(slice);
 
 	char* buffer = do_malloc(sizeof(char) * SLICE_SIZE(slice)); // sufficient as we do not include '"' '\''
 	char* buffer_iter = buffer;
 	json_t* ret = NULL;
-	for (iter = slice.begin; iter != end && *iter;) {
+	for (iter = slice.begin + 1; iter != end && *iter;) {
 		if (*iter == '\\') {  // escape
 			++iter;
 			assert(iter != end && *iter); // already checked by lexeme.c
@@ -665,21 +669,28 @@ static jsonpath_t* parse_unary(const char** pw_begin, const char* w_end, jsonpat
 		if (error->abort) return NULL;
 	}
 	jsonpath_t* inner = NULL;
-	json_t* constant = try_parse_constant(word_peek, error);
-	if(error->abort){
-		return NULL;
-	}
-	if(constant){
-		go_next();
+
+	if (map_to_unary_op(word_peek) != UNARY_MAX){
+		inner = parse_unary(pw_begin, w_end, error);
+	}else{
+		json_t* constant = try_parse_constant(word_peek, error);
 		if (error->abort) {
-			json_decref(constant);
 			return NULL;
 		}
-		inner = make_const(constant);
-	}else{
-		inner = parse_path(pw_begin, w_end, error);
-		if (!inner) return NULL;
+		if (constant) {
+			go_next();
+			if (error->abort) {
+				json_decref(constant);
+				return NULL;
+			}
+			inner = make_const(constant);
+		}
+		else {
+			inner = parse_path(pw_begin, w_end, error);
+			if (!inner) return NULL;
+		}
 	}
+	
 	jsonpath_t* ret = unary_op != UNARY_MAX ? build_unary(unary_op, inner) : inner;
 	return ret;
 	
@@ -722,9 +733,7 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 		if (error->abort) break;
 		ret = parse_binary(&w_begin, w_end, 0, error);
 		if (!ret) break;
-		if ((pjsonpath_end && w_begin != w_end) ||
-			(!pjsonpath_end && *w_begin != '\0')
-			) {
+		if (!IS_SLICE_EMPTY(word_peek)) {
 			jsonpath_release(ret);
 			ret = NULL;
 			error->abort = true;
