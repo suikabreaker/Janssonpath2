@@ -24,15 +24,17 @@ int test(const char* test_path){
 	if (error.code) {
 		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
 		printf("At position [%zd]\n", (const char*)error.extra - test_path);
-		return -1;
+		if(error.abort) return -1;
 	}
 	puts("compiled");
 	jsonpath_result_t result = jsonpath_evaluate(NULL, jsonpath, NULL, &error);
 	if (error.code) {
 		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
 		printf("At position [%zd]\n", (const char*)error.extra - test_path);
-		ret = -2;
-		goto jsonpath_;
+		if(error.abort){
+			ret = -2;
+			goto jsonpath_;
+		}
 	}
 	puts("evaluated to:");
 	output_result(result);
@@ -41,8 +43,10 @@ int test(const char* test_path){
 	if (error.code) {
 		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
 		printf("At position [%zd]\n", (const char*)error.extra - test_path);
-		ret = -3;
-		goto result1_;
+		if (error.abort) {
+			ret = -3;
+			goto result1_;
+		}
 	}
 	puts("second time evaluated to:");
 	output_result(result2);
