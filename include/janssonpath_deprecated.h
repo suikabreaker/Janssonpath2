@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-typedef struct JANSSONPATH_DEPRECATED_EXPORT path_result {
+typedef struct JANSSONPATH_DEPRECATED path_result {
 	json_t* result;
 	int is_collection;
 } path_result;

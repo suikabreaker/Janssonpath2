@@ -23,10 +23,7 @@ typedef struct jsonpath_result_t {
 	bool is_constant : 1;
 }jsonpath_result_t;
 
-static jsonpath_result_t jsonpath_incref(jsonpath_result_t in) {
-	json_incref(in.value);
-	return in;
-}
+#define jsonpath_incref(in) (json_incref((in).value),(in))
 
 // instead of jsonpath_result_release we decref it.
 #define jsonpath_decref(in) json_decref(in.value)
