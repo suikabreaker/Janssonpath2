@@ -13,16 +13,62 @@ static const jsonpath_error_t jsonpath_error_collection_oprand = {
 	true, 0xAA, "Collection used as oprand in incompatible opration", NULL
 };
 
-static jsonpath_function get_function(jsonpath_function_table_t* function_table, const char* name){
-	size_t i;
-	if (function_table) for (i = 0; i < function_table->size; ++i)
-		if (!strcmp(function_table->names[i], name)) return function_table->functions[i];
+typedef struct json_function_t{
+	jsonpath_callable_tag_t tag;
+	union{
+		jsonpath_callable_bind_t bind;
+		jsonpath_callable_plain_t plain;
+	};
+} json_function_t;
+
+static json_t* call_function(json_function_t function, json_t** args, size_t arg_n){
+	switch (function.tag) {
+	case JSONPATH_CALLABLE_PLAIN:
+	{
+		if (!function.plain)return NULL;
+		return function.plain(args, arg_n);
+	}
+	case JSONPATH_CALLABLE_BIND:
+	{
+		if (!function.bind.function)return NULL;
+		return function.bind.function(args, arg_n, function.bind.bind);
+	}
+	default:
+		break;
+	}
 	return NULL;
+}
+
+static json_function_t get_function(jsonpath_function_generator_t* function_gen, const char* name){
+	json_function_t ret = { JSONPATH_CALLABLE_MAX, {.plain = NULL} };
+	if (!function_gen) return ret;
+	switch (function_gen->tag) {
+	case JSONPATH_CALLABLE_PLAIN:
+	{
+		jsonpath_function_table_t plain_table = function_gen->plain_table;
+		size_t i;
+		for (i = 0; i < plain_table.size; ++i)if (!strcmp(plain_table.names[i], name)) {
+			ret.tag = JSONPATH_CALLABLE_PLAIN;
+			ret.plain = plain_table.functions[i];
+			break;
+		}
+	}
+	break;
+	case JSONPATH_CALLABLE_BIND:
+	{
+		ret.tag = JSONPATH_CALLABLE_BIND;
+		ret.bind = function_gen->bind_map(name, function_gen->bind_context);
+	}
+	break;
+	default:
+		break;
+	}
+	return ret;
 }
 
 static const jsonpath_result_t error_result = { NULL,false,false,false };
 
-static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error);
+static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error);
 #ifdef JANSSONPATH_CONSTANT_FOLD
 void JANSSONPATH_NO_EXPORT jsonpath_release_no_free(jsonpath_t* jsonpath);
 static void jsonpath_constant_fold(jsonpath_t* jsonpath, jsonpath_result_t value) {
@@ -32,11 +78,11 @@ static void jsonpath_constant_fold(jsonpath_t* jsonpath, jsonpath_result_t value
 	jsonpath->constant_result = value;
 }
 
-static jsonpath_result_t jsonpath_evaluate_impl_constant_fold(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_constant_fold(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	if(jsonpath->tag == JSON_CONSTANT){
 		return jsonpath_incref(jsonpath->constant_result);
 	}
-	jsonpath_result_t ret = jsonpath_evaluate_impl_basic(root, curr_element, jsonpath, function_table, error);
+	jsonpath_result_t ret = jsonpath_evaluate_impl_basic(root, curr_element, jsonpath, function_gen, error);
 	if (!error->abort && ret.is_constant) {
 		jsonpath_constant_fold(jsonpath, jsonpath_incref(ret));
 	}
@@ -70,7 +116,7 @@ static json_t* json_object_to_array(json_t *object){
 
 static jsonpath_result_t path_deal_with_collection(
 	json_t* root, jsonpath_result_t curr_element,
-	path_index_t operator_, jsonpath_result_t node, jsonpath_function_table_t* function_table, jsonpath_error_t* error
+	path_index_t operator_, jsonpath_result_t node, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error
 );
 
 static json_t* json_get_all_property(json_t* node){
@@ -119,7 +165,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_simple_index(jsonpath_result_t n
 	}
 }
 
-static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpath_result_t curr_element, jsonpath_result_t node, path_index_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpath_result_t curr_element, jsonpath_result_t node, path_index_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	assert(!node.is_collection);
 	switch (jsonpath.tag) {
 	case INDEX_SUB_SIMPLE:
@@ -146,12 +192,12 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 
 		path_index_t fake_path_index = jsonpath; // no need to release
 		fake_path_index.tag = INDEX_SUB_SIMPLE;
-		jsonpath_result_t ret = path_deal_with_collection(root, curr_element, fake_path_index, all_node_result, function_table, error);
+		jsonpath_result_t ret = path_deal_with_collection(root, curr_element, fake_path_index, all_node_result, function_gen, error);
 		jsonpath_decref(all_node_result);
 		return ret;
 	}
 	case INDEX_SUB_EXP: {
-		jsonpath_result_t sub_exp_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.expression, function_table, error);
+		jsonpath_result_t sub_exp_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.expression, function_gen, error);
 		if (error->abort) return error_result;
 		jsonpath_result_t ret =jsonpath_evaluate_impl_simple_index(node, sub_exp_result.value);
 		jsonpath_decref(sub_exp_result);
@@ -163,7 +209,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 		jsonpath_result_t ret = error_result;
 		jsonpath_result_t range_json[2] = { { NULL,false,true,true }, { NULL,false,true,true } };
 		if (jsonpath.range[0]) {
-			range_json[0] = jsonpath_evaluate_impl(root, curr_element, jsonpath.range[0], function_table, error);
+			range_json[0] = jsonpath_evaluate_impl(root, curr_element, jsonpath.range[0], function_gen, error);
 			if (error->abort) return error_result;
 			if (range_json[0].is_collection) {
 				*error = jsonpath_error_collection_oprand;
@@ -171,7 +217,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 			}
 		}
 		if (jsonpath.range[1]) {
-			range_json[1] = jsonpath_evaluate_impl(root, curr_element, jsonpath.range[1], function_table, error);
+			range_json[1] = jsonpath_evaluate_impl(root, curr_element, jsonpath.range[1], function_gen, error);
 			if (error->abort) goto range0;
 			if (range_json[1].is_collection) {
 				*error = jsonpath_error_collection_oprand;
@@ -209,7 +255,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 
 #define for_body {\
 		jsonpath_result_t curr = make_result_borrow(value, false, false, false);\
-		jsonpath_result_t cond = jsonpath_evaluate_impl(root, curr, jsonpath.expression, function_table, error);\
+		jsonpath_result_t cond = jsonpath_evaluate_impl(root, curr, jsonpath.expression, function_gen, error);\
 		if (error->abort)goto fail;\
 		if (cond.is_collection) {\
 			jsonpath_decref(curr);\
@@ -244,16 +290,16 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 
 static jsonpath_result_t path_deal_with_collection(
 	json_t* root, jsonpath_result_t curr_element,
-	path_index_t operator_, jsonpath_result_t node, jsonpath_function_table_t* function_table, jsonpath_error_t* error
+	path_index_t operator_, jsonpath_result_t node, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error
 ) {
 	if (!node.is_collection) {
-		return jsonpath_evaluate_impl_path_single(root, curr_element, node, operator_, function_table, error);
+		return jsonpath_evaluate_impl_path_single(root, curr_element, node, operator_, function_gen, error);
 	}
 	else {
 		size_t index; json_t* value;
 		jsonpath_result_t ret = make_result_new(json_array(), true, true, node.is_constant);
 		json_array_foreach(node.value, index, value) {
-			jsonpath_result_t mapped_element = jsonpath_evaluate_impl_path_single(root, curr_element, make_result_borrow(value,false,node.is_right_value,node.is_constant), operator_, function_table, error);
+			jsonpath_result_t mapped_element = jsonpath_evaluate_impl_path_single(root, curr_element, make_result_borrow(value,false,node.is_right_value,node.is_constant), operator_, function_gen, error);
 			if (error->abort) {
 				jsonpath_decref(ret);
 				return error_result;
@@ -271,14 +317,14 @@ static jsonpath_result_t path_deal_with_collection(
 }
 
 // note that root is absolute, thus second $ in (*$.a[1:20])[$.index] does not refer to (*$.a[1:20])
-static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_result_t curr_element, path_indexes_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error){
+static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_result_t curr_element, path_indexes_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error){
 	// inner expression will take curr_root as their curr_element
-	jsonpath_result_t ret = jsonpath_evaluate_impl(root, curr_element, jsonpath.root_node, function_table, error);
+	jsonpath_result_t ret = jsonpath_evaluate_impl(root, curr_element, jsonpath.root_node, function_gen, error);
 	if (error->abort) return error_result;
 
 	size_t i;
 	for (i = 0; i < jsonpath.size; ++i) {
-		jsonpath_result_t new_ret = path_deal_with_collection(root, ret, jsonpath.indexes[i], ret, function_table, error);
+		jsonpath_result_t new_ret = path_deal_with_collection(root, ret, jsonpath.indexes[i], ret, function_gen, error);
 		jsonpath_decref(ret);
 		if (error->abort) return error_result;
 		ret = new_ret;
@@ -503,12 +549,12 @@ static jsonpath_result_t binary_deal_with_collection(
 
 // we don't accept right oprand to be collection
 // to do something like 1-$.*, you can translate it into -$.*+1
-static jsonpath_result_t jsonpath_evaluate_impl_binary(json_t* root, jsonpath_result_t curr_element, path_binary_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_binary(json_t* root, jsonpath_result_t curr_element, path_binary_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	jsonpath_result_t ret = error_result;
 	
-	jsonpath_result_t lhs_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.lhs, function_table, error);
+	jsonpath_result_t lhs_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.lhs, function_gen, error);
 	if (error->abort) goto lhs_release;
-	jsonpath_result_t rhs_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.rhs, function_table, error);
+	jsonpath_result_t rhs_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.rhs, function_gen, error);
 	if (error->abort) {
 		goto lhs_release;
 	}
@@ -527,13 +573,13 @@ lhs_release:
 
 // we simply forbid to call function against collection
 // if you want to deal with collection, you can cast it into json_array with to_array
-static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath_result_t curr_element, path_arbitrary_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath_result_t curr_element, path_arbitrary_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	assert(json_is_string(jsonpath.func_name));
-	jsonpath_function func = get_function(function_table, json_string_value(jsonpath.func_name));
-	if (!func) {
+	json_function_t func = get_function(function_gen, json_string_value(jsonpath.func_name));
+	if (func.tag== JSONPATH_CALLABLE_MAX || func.plain == NULL) {
 		error->abort = true;
 		error->code = 0xa1;
-		error->reason = "Function not found in the table";
+		error->reason = "Function not found";
 		error->extra = (void*)jsonpath.func_name;
 		return error_result;
 	}
@@ -544,7 +590,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath
 
 	// we don't assume functon call to be stateless and pure functional, so it's not constant even if all arguments are constant.
 	for (arg_n = 0; arg_n < jsonpath.size; ++arg_n) {
-		jsonpath_result_t arg = jsonpath_evaluate_impl(root, curr_element, jsonpath.nodes[arg_n], function_table, error);
+		jsonpath_result_t arg = jsonpath_evaluate_impl(root, curr_element, jsonpath.nodes[arg_n], function_gen, error);
 		if (!error->abort && arg.is_collection) {
 			*error = jsonpath_error_collection_oprand;
 			jsonpath_decref(arg);
@@ -552,7 +598,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath
 		if (error->abort) goto args_release;
 		args[arg_n] = arg.value;
 	}
-	ret = make_result_new(func(args, jsonpath.size), false, true, false);
+	ret = make_result_new(call_function(func, args, jsonpath.size), false, true, false);
 	size_t i;
 args_release: // simple dumb C have no label break, so even do{}while(0); does not work here
 	for(i=0;i<arg_n;++i) json_decref(args[i]);
@@ -638,7 +684,7 @@ static jsonpath_result_t evaluate_unary(path_unary_tag_t op, jsonpath_result_t o
 	return ret;
 }
 
-static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	assert(!curr_element.is_collection);
 	switch (jsonpath->tag) {
 	case JSON_SINGLE:// single does not promote to collection
@@ -652,27 +698,27 @@ static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_res
 		default: break;
 		}
 	case JSON_INDEX:
-		return jsonpath_evaluate_impl_path(root, curr_element, jsonpath->indexes, function_table, error);
+		return jsonpath_evaluate_impl_path(root, curr_element, jsonpath->indexes, function_gen, error);
 	case JSON_UNARY: {
-		jsonpath_result_t node = jsonpath_evaluate_impl_basic(root, curr_element, jsonpath->unary.node, function_table, error);
+		jsonpath_result_t node = jsonpath_evaluate_impl_basic(root, curr_element, jsonpath->unary.node, function_gen, error);
 		if (error->abort) return node;
 		jsonpath_result_t ret = evaluate_unary(jsonpath->unary.tag, node, error);
 		jsonpath_decref(node);
 		return ret;
 	}
 	case JSON_BINARY:
-		return jsonpath_evaluate_impl_binary(root, curr_element, jsonpath->binary, function_table, error);
+		return jsonpath_evaluate_impl_binary(root, curr_element, jsonpath->binary, function_gen, error);
 	case JSON_ARBITRAY:
-		return jsonpath_evaluate_impl_arbitrary(root, curr_element, jsonpath->arbitrary, function_table, error);
+		return jsonpath_evaluate_impl_arbitrary(root, curr_element, jsonpath->arbitrary, function_gen, error);
 	default: break;
 	}
 	*error = jsonpath_error_unknown;
 	return error_result;
 }
 
-JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error){
+JANSSONPATH_EXPORT JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	*error = jsonpath_error_ok;
 	jsonpath_result_t root_curr = make_result_new(root, false, false, false);
-	jsonpath_result_t ret = jsonpath_evaluate_impl(root, root_curr, jsonpath, function_table, error);
+	jsonpath_result_t ret = jsonpath_evaluate_impl(root, root_curr, jsonpath, function_gen, error);
 	return ret;
 }

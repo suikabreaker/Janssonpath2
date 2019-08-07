@@ -33,17 +33,42 @@ static jsonpath_result_t jsonpath_incref(jsonpath_result_t in) {
 
 // As a loose constrain, jsonpath_functions should not json_decref or modify its input. (json_incref is allowed)
 // jsonpath_function should return a new reference.
-typedef json_t* (*jsonpath_function)(json_t**, size_t);
+typedef json_t* (*jsonpath_callable_plain_t)(json_t**, size_t);
 
 // names[i] <-> functions[i] is a one to one map.
 typedef struct jsonpath_function_table_t{
 	const char* *names;
-	const jsonpath_function* functions;
+	const jsonpath_callable_plain_t* functions;
 	size_t size;
 }jsonpath_function_table_t;
+
+typedef json_t* (*jsonpath_callable_func_t)(json_t**, size_t, void*);
+typedef struct jsonpath_callable_bind_t{
+	jsonpath_callable_func_t function;
+	void* bind;
+}jsonpath_callable_bind_t;
+
+
+typedef enum jsonpath_callable_tag_t{
+	JSONPATH_CALLABLE_PLAIN, JSONPATH_CALLABLE_BIND, JSONPATH_CALLABLE_MAX
+} jsonpath_callable_tag_t;
+
+typedef struct jsonpath_function_generator_t {
+	jsonpath_callable_tag_t tag;
+	union{
+		jsonpath_function_table_t plain_table;
+		struct {
+			jsonpath_callable_bind_t(*bind_map)(const char*, void*);
+			void* bind_context;
+		};
+	};
+
+
+}jsonpath_function_generator_t;
+
 struct jsonpath_t;
 typedef struct jsonpath_t jsonpath_t;
-JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error);
+JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error);
 
 #ifdef __cplusplus
 }
