@@ -18,12 +18,6 @@ else()
 		-Wmissing-declarations -Wundef -Werror=implicit-function-declaration -Wno-implicit-fallthrough -Wno-deprecated-declarations")
 endif()
 
-configure_file (
-	"${PROJECT_SOURCE_DIR}/include/janssonpath_conf.h.in"
-	"${PROJECT_BINARY_DIR}/janssonpath_conf.h"
-)
-include_directories("${PROJECT_BINARY_DIR}")
-
 find_package(JANSSON REQUIRED)
 
 include_directories("${PROJECT_SOURCE_DIR}/include")
@@ -125,3 +119,10 @@ if(DEBUG_ASAN)
 	set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 	#target_link_libraries(compile_test -fsanitize=address)
 endif()
+
+# important! put it after all options set
+configure_file (
+	"${PROJECT_SOURCE_DIR}/include/janssonpath_conf.h.in"
+	"${PROJECT_BINARY_DIR}/janssonpath_conf.h"
+)
+include_directories("${PROJECT_BINARY_DIR}")
