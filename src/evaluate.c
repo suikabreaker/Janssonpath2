@@ -334,7 +334,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_resu
 	return ret;
 }
 
-static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs) {
+static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs, jsonpath_error_t* error) {
 	// we don't abort at type error. instead we return NULL
 	switch(operator_){
 	case BINARY_ADD: {
@@ -517,7 +517,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 #ifdef JANSSONPATH_SUPPORT_REGEX
 	case BINARY_REGEX: {
 		if (!json_is_string(lhs) || !json_is_string(rhs)) return NULL;
-		jansson_regex_t* regex = regex_compile(json_string_value(rhs),error);
+		jansson_regex_t* regex = regex_compile(json_string_value(rhs), error);
 		if(error->abort) return NULL;
 		json_t* ret = json_boolean(regex_match(json_string_value(lhs), regex)); // TODO: cache regex for constant
 		regex_free(regex);
@@ -532,16 +532,16 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 
 
 static jsonpath_result_t binary_deal_with_collection(
-	path_binary_tag_t operator_, jsonpath_result_t lhs, jsonpath_result_t rhs
+	path_binary_tag_t operator_, jsonpath_result_t lhs, jsonpath_result_t rhs, jsonpath_error_t* error
 ) {
 	if (!lhs.is_collection) {
-		return make_result_new(json_binary(operator_, lhs.value, rhs.value), false, true, lhs.is_constant && rhs.is_constant);
+		return make_result_new(json_binary(operator_, lhs.value, rhs.value, error), false, true, lhs.is_constant && rhs.is_constant);
 	}
 	else {
 		size_t index; json_t* value;
 		jsonpath_result_t ret = make_result_new(json_array(), true, true, lhs.is_constant && rhs.is_constant);
 		json_array_foreach(lhs.value, index, value) {
-			json_t* mapped_element = json_binary(operator_, value, rhs.value);
+			json_t* mapped_element = json_binary(operator_, value, rhs.value, error);
 			json_array_append_new(ret.value, mapped_element);
 		}
 		return ret;
@@ -564,7 +564,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_binary(json_t* root, jsonpath_re
 		goto rhs_release;
 	}
 
-	ret = binary_deal_with_collection(jsonpath.tag, lhs_result, rhs_result);
+	ret = binary_deal_with_collection(jsonpath.tag, lhs_result, rhs_result, error);
 rhs_release:
 	jsonpath_decref(rhs_result);
 lhs_release:
@@ -576,8 +576,8 @@ lhs_release:
 // if you want to deal with collection, you can cast it into json_array with to_array
 static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath_result_t curr_element, path_arbitrary_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	assert(json_is_string(jsonpath.func_name));
-	jsonpath_function func = get_function(function_gen, json_string_value(jsonpath.func_name));
-	if (!func) {
+	json_function_t func = get_function(function_gen, json_string_value(jsonpath.func_name));
+	if (func.tag == JSONPATH_CALLABLE_MAX || func.plain == NULL) {
 		*error = jsonpath_error_function_not_found(json_string_value(jsonpath.func_name));
 		return error_result;
 	}
