@@ -335,6 +335,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_resu
 }
 
 static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs, jsonpath_error_t* error) {
+	(void)(error); // disable warning for build without regex
 	// we don't abort at type error. instead we return NULL
 	switch(operator_){
 	case BINARY_ADD: {
@@ -717,7 +718,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_res
 	return error_result;
 }
 
-JANSSONPATH_EXPORT JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
+JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
 	*error = jsonpath_error_ok;
 	jsonpath_result_t root_curr = make_result_new(root, false, false, false);
 	jsonpath_result_t ret = jsonpath_evaluate_impl(root, root_curr, jsonpath, function_gen, error);
