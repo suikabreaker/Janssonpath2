@@ -10,7 +10,7 @@
 #endif
 
 static const jsonpath_error_t jsonpath_error_collection_oprand = {
-	true, 0xaa, "Collection used as oprand in incompatible opration", NULL
+	true, 0xAA, "Collection used as oprand in incompatible opration", NULL
 };
 
 static jsonpath_function get_function(jsonpath_function_table_t* function_table, const char* name){
@@ -73,28 +73,30 @@ static json_t* json_get_all_property(json_t* node){
 	else return json_array();
 }
 
-static size_t json_array_index_translate(json_int_t index, size_t array_size){
+// for empty array it returns -1
+static long long json_array_index_translate(json_int_t index, size_t array_size){
 	if (index < 0) index = array_size + index; // for -n
-	size_t ret = (index < 0) ? 0 : index;
+	long long ret = (index < 0) ? 0 : index;
 	if (ret >= array_size) ret = array_size - 1;
 	return ret;
 }
 
 static jsonpath_result_t jsonpath_evaluate_impl_simple_index(jsonpath_result_t node, json_t* simple_index){
 	assert(!node.is_collection);
-	if (simple_index) {
-		return make_result(json_get_all_property(node.value), true, true, node.is_constant);
+	if (!simple_index) { // *
+		return make_result(json_get_all_property(node.value), true, node.is_right_value, node.is_constant);
 	}
 	else if (json_is_string(simple_index)) {
-		return make_result(json_object_get(node.value, json_string_value(simple_index)), false, true, node.is_constant);
+		return make_result(json_object_get(node.value, json_string_value(simple_index)), false, node.is_right_value, node.is_constant);
 	}
 	else if (json_is_number(simple_index)) {
 		if (json_is_array(node.value)) return error_result;
 		json_int_t index = json_is_integer(simple_index) ? json_integer_value(simple_index) : (json_int_t)json_real_value(simple_index);
 		size_t array_size = json_array_size(node.value);
-		return make_result(json_array_get(node.value, json_array_index_translate(index, array_size)), false, true, node.is_constant);
+		long long translated_index = json_array_index_translate(index, array_size);
+		return make_result(translated_index >= 0 ? json_array_get(node.value, translated_index) : NULL, false, node.is_right_value, node.is_constant);
 	}
-	else if (json_is_null(simple_index)) {
+	else if (json_is_null(simple_index)) {// #
 		size_t size;
 		if (json_is_array(node.value)) {
 			size = json_array_size(node.value);
@@ -180,7 +182,8 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_simple(json_t* root, jsonpa
 			index[1] = json_is_integer(range_json[1].value) ? json_integer_value(range_json[1].value) : (json_int_t)json_real_value(range_json[1].value);
 		}
 		
-		size_t begin = json_array_index_translate(index[0], array_size), end = json_array_index_translate(index[1], array_size);
+		// doesn't matter if it returns -1
+		long long begin = json_array_index_translate(index[0], array_size), end = json_array_index_translate(index[1], array_size);
 		
 		ret = make_result(json_array(), true, true, node.is_constant && range_json[0].is_constant && range_json[1].is_constant);
 		size_t i;
@@ -277,10 +280,10 @@ static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_resu
 }
 
 static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs, jsonpath_error_t* error) {
-	// we don't abort at type error. instead we return json_null()
+	// we don't abort at type error. instead we return NULL
 	switch(operator_){
 	case BINARY_ADD: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_real(json_real_value(lhs) + json_real_value(rhs));
 		}else {
@@ -288,7 +291,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_MNU: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_real(json_real_value(lhs) - json_real_value(rhs));
 		}else {
@@ -296,7 +299,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_MUL: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_real(json_real_value(lhs) * json_real_value(rhs));
 		}else {
@@ -304,7 +307,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_DIV: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_real(json_number_value(lhs) / json_number_value(rhs));
 		}else {
@@ -315,7 +318,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		if (json_is_integer(lhs) && json_is_integer(rhs)) {
 			return json_integer(json_integer_value(lhs) % json_integer_value(rhs));
 		}else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_BITAND: {
@@ -324,7 +327,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}else if (json_is_boolean(lhs) && json_is_boolean(rhs)) {
 			return json_boolean(json_boolean_value(lhs) && json_boolean_value(rhs));
 		}else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_BITXOR: {
@@ -337,7 +340,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			return json_boolean(lhs_^rhs_);
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_BITOR: {
@@ -348,7 +351,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			return json_boolean(json_boolean_value(lhs) || json_boolean_value(rhs));
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_AND: {
@@ -358,7 +361,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}else if(json_is_boolean(lhs)){
 			lhs_ = json_boolean_value(lhs);
 		}else {
-			return json_null();
+			return NULL;
 		}
 		if (json_is_number(rhs)) {
 			rhs_ = json_number_value(rhs);
@@ -367,7 +370,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			rhs_ = json_boolean_value(rhs);
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 		return json_boolean(lhs_ && rhs_);
 	}
@@ -380,7 +383,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			lhs_ = json_boolean_value(lhs);
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 		if (json_is_number(rhs)) {
 			rhs_ = json_number_value(rhs);
@@ -389,7 +392,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			rhs_ = json_boolean_value(rhs);
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 		return json_boolean(lhs_ || rhs_);
 	}
@@ -397,7 +400,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		if (json_is_integer(lhs) && json_is_integer(rhs)) {
 			return json_integer(json_integer_value(lhs) << json_integer_value(rhs));
 		}else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_RSH: {
@@ -405,7 +408,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 			return json_integer(json_integer_value(lhs) >> json_integer_value(rhs));
 		}
 		else {
-			return json_null();
+			return NULL;
 		}
 	}
 	case BINARY_EQ: {
@@ -415,7 +418,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		return json_boolean(!json_equal(lhs, rhs));
 	}
 	case BINARY_LT: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_boolean(json_real_value(lhs) < json_real_value(rhs));
 		}
@@ -424,7 +427,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_GT: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_boolean(json_real_value(lhs) > json_real_value(rhs));
 		}
@@ -433,7 +436,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_LE: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_boolean(json_real_value(lhs) <= json_real_value(rhs));
 		}
@@ -442,7 +445,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_GE: {
-		if (!json_is_number(lhs) || !json_is_number(rhs)) return json_null();
+		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
 			return json_boolean(json_real_value(lhs) >= json_real_value(rhs));
 		}
@@ -451,16 +454,16 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 		}
 	}
 	case BINARY_ARRAY_CON: {
-		if (!json_is_array(lhs) || !json_is_array(rhs)) return json_null();
+		if (!json_is_array(lhs) || !json_is_array(rhs)) return NULL;
 		json_t* ret = json_copy(lhs);
-		if(!json_array_extend(ret, rhs)) return json_null();
+		if(!json_array_extend(ret, rhs)) return NULL;
 		return ret;
 	}
 #ifdef JANSSONPATH_SUPPORT_REGEX
 	case BINARY_REGEX: {
-		if (!json_is_string(lhs) || !json_is_string(rhs)) return json_null();
+		if (!json_is_string(lhs) || !json_is_string(rhs)) return NULL;
 		jansson_regex_t* regex = regex_compile(json_string_value(rhs),error);
-		if(error->abort) return json_null();
+		if(error->abort) return NULL;
 		json_t* ret = json_boolean(regex_match(json_string_value(lhs), regex)); // TODO: cache regex for constant
 		regex_free(regex);
 		return ret;
@@ -468,7 +471,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 #endif
 	default:
 		assert(false);
-		return json_null();
+		return NULL;
 	}
 }
 
@@ -552,7 +555,7 @@ args_release: // simple dumb C have no label break, so even do{}while(0); does n
 static json_t* json_not(json_t* in){
 	if (json_is_boolean(in)) return json_boolean(!json_boolean_value(in));
 	else if (json_is_number(in)) return json_boolean(!json_number_value(in)); // should we allow number to be negatived?
-	else return json_null();
+	else return NULL;
 } 
 
 static json_t* json_neg(json_t* in) {
@@ -563,7 +566,7 @@ static json_t* json_neg(json_t* in) {
 	}else if (json_is_real(in)) {
 		return json_real(-json_real_value(in));
 	}else {
-		return json_null();
+		return NULL;
 	}
 }
 
@@ -572,7 +575,7 @@ static json_t* json_bitnot(json_t* in) {
 	else if (json_is_integer(in)) {
 		return json_integer(~json_integer_value(in));
 	}else {
-		return json_null();
+		return NULL;
 	}
 }
 
@@ -658,7 +661,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_res
 JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error){
 	*error = jsonpath_error_ok;
 	json_t* dup_root = json_incref(root);
-	jsonpath_result_t root_curr = make_result(dup_root, false, true, false);
+	jsonpath_result_t root_curr = make_result(dup_root, false, false, false);
 	jsonpath_result_t ret = jsonpath_evaluate_impl(root, root_curr, jsonpath, function_table, error);
 	json_decref(dup_root);
 	return ret;

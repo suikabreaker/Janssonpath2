@@ -16,7 +16,7 @@ static void output_result(jsonpath_result_t result){
 	json_decref(root);
 }
 
-int test(const char* test_path){
+int test(json_t* json, const char* test_path){
 	int ret = 0;
 
 	jsonpath_error_t error;
@@ -27,7 +27,7 @@ int test(const char* test_path){
 		if(error.abort) return -1;
 	}
 	puts("compiled");
-	jsonpath_result_t result = jsonpath_evaluate(NULL, jsonpath, NULL, &error);
+	jsonpath_result_t result = jsonpath_evaluate(json, jsonpath, NULL, &error);
 	if (error.code) {
 		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
 		printf("At position [%zd]\n", (const char*)error.extra - test_path);
@@ -39,7 +39,7 @@ int test(const char* test_path){
 	puts("evaluated to:");
 	output_result(result);
 
-	jsonpath_result_t result2 = jsonpath_evaluate(NULL, jsonpath, NULL, &error); // second time to check if constant fold works
+	jsonpath_result_t result2 = jsonpath_evaluate(json, jsonpath, NULL, &error); // second time to check if constant fold works
 	if (error.code) {
 		printf("%s: %s\n", error.abort ? "Error" : "Warning", error.reason);
 		printf("At position [%zd]\n", (const char*)error.extra - test_path);
@@ -56,19 +56,21 @@ result1_:
 jsonpath_:
 	jsonpath_release(jsonpath);
 	puts("released");
-	return 0;
+	return ret;
 }
 
 int main(int argc, char** argv) {
-	if (argc < 2) {
+	json_error_t error;
+	if (argc < 3) {
 		char buffer[1024];
+		scanf("%s", buffer);
+		json_t* json = json_load_file(buffer, JSON_DECODE_ANY | JSON_ALLOW_NUL, &error);
 		while (scanf(" %[^\n]", buffer) > 0) {
-			test(buffer);
+			test(json, buffer);
 		}
 		return 0;
 	}else{
-		return test(argv[1]);
+		json_t* json = json_load_file(argv[1], JSON_DECODE_ANY | JSON_ALLOW_NUL, &error);
+		return test(json, argv[2]);
 	}
-
-	
 }
