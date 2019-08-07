@@ -6,17 +6,35 @@
 #include "private/jsonpath_ast.h"
 #include "private/jansson_memory.h"
 #include "private/lexeme.h"
+#include "private/error.h"
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(
+    const char* jsonpath_begin, const char** pjsonpath_end,
+    jsonpath_error_t* error);
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin,
+                                                jsonpath_error_t* error);
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_parse(const char** p_jsonpath_begin,
+                                              jsonpath_error_t* error);
 
 // todo: add optional support for wildcard and regular expression
-// we allow wild card in subscribe string indexing like ["test_*"], but not in dot indexing
-// because it causes ambiguity
-// should we support [$.pattern] where $.pattern is a wildcard pattern? It could be problematical
+// we allow wild card in subscribe string indexing like ["test_*"], but not
+// in dot indexing because it causes ambiguity should we support [$.pattern]
+// where $.pattern is a wildcard pattern? It could be problematical
 
 // structures are not of large size. use return value rather than pointer
 // and potentially it can be optimized out with RVO
-// functions below steals ownership of passed in values. remember to incref them if it will be used elsewhere.
+// functions below steals ownership of passed in values. remember to incref
+// them if it will be used elsewhere.
 
 void JANSSONPATH_EXPORT jsonpath_release(jsonpath_t* jsonpath);
+
+static int slice_cstr_cmp(string_slice slice, const char* c_str) {
+    size_t len = SLICE_SIZE(slice);
+    int cmp = strncmp(slice.begin, c_str, len);
+    if (cmp) return cmp;
+    // cmp == 0
+    return -(int)(unsigned char)c_str[len];
+}
 
 // use static to expect inline optimization
 // pass by value for release functions, because them are small to pass, and safe to copy(as they are not referenced by address)
@@ -364,10 +382,7 @@ static jsonpath_t* match_brackets(const char** pw_begin, const char* w_end, json
 	}
 	if (count != 0) {
 		jsonpath_release(ret);
-		error->abort = true;
-		error->code = 0x61;
-		error->reason = "unmacthed bracket";
-		error->extra = (void*)w_begin;
+		*error = json_error_unmatched_bracked(w_begin);
 		return NULL;
 	}
 	return ret;
@@ -415,7 +430,7 @@ static path_index_t parse_index_sub(const char** pw_begin, const char* w_end, js
 		if (error->abort) return error_index;
 		jsonpath_t* filter = parse_binary(&w_begin, w_end, 0, error);
 		if (!filter) return error_index;
-		path_index_t ret = { INDEX_FILTER,{.expression = filter} };
+		path_index_t ret = build_filter_index(filter);
 		return ret;
 	}
 	else {
@@ -443,59 +458,56 @@ static path_index_t parse_index_sub(const char** pw_begin, const char* w_end, js
 	}
 }
 
-static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, const char* w_end, jsonpath_error_t* error){
-	go_next();
-	if (error->abort) return error_index;
-	switch (path_ind) {
-	case PATH_IND_DOT:
-	case PATH_IND_DDOT: {
-		json_t* index_simple = NULL;
-		if (is_identifier(word_peek)) {
-			index_simple = json_stringn_nocheck(word_peek.begin, SLICE_SIZE(word_peek));
-		}
-		else if (is_punctor(word_peek, '*')) {
-			index_simple = NULL;
-		}
-		else if (is_punctor(word_peek, '#')) {
-			index_simple = json_null();
-		}
-		else { // should we support string here?
-			error->abort = true;
-			error->code = 0x62;
-			error->reason = "expecting simple index(*/#/identifier)";
-			error->extra = w_begin;
-			return error_index;
-		}
-		go_next();
-		if (error->abort) {
-			json_decref(index_simple);
-			return error_index;
-		}
-		return (path_ind == PATH_IND_DOT) ? build_simple_index(index_simple) : build_recursive_index(index_simple);
-	}
-	case PATH_IND_LBR: {
-		path_index_t ret = parse_index_sub(pw_begin, w_end, error);
-		if (ret.tag == INDEX_MAX) return ret;
-		if(is_punctor(word_peek,']')){
-			go_next();
-			if (error->abort) {
-				index_release(ret);
-				return error_index;
-			}
-			return ret;
-		}else{
-			index_release(ret);
-			error->abort = true;
-			error->code = 0x65;
-			error->reason = "expecting ']'";
-			error->extra = w_begin;
-			return error_index;
-		}
-	}
-	default:
-		assert(false);
-		return error_index;
-	}
+static path_index_t parse_index(path_indicate path_ind, const char** pw_begin,
+                                const char* w_end, jsonpath_error_t* error) {
+    go_next();
+    if (error->abort) return error_index;
+    switch (path_ind) {
+    case PATH_IND_DOT:
+    case PATH_IND_DDOT: {
+        json_t* index_simple = NULL;
+        if (is_identifier(word_peek)) {
+            index_simple =
+                json_stringn_nocheck(word_peek.begin, SLICE_SIZE(word_peek));
+        } else if (is_punctor(word_peek, '*')) {
+            index_simple = NULL;
+        } else if (is_punctor(word_peek, '#')) {
+            index_simple = json_null();
+        } else {  // should we support string here?
+            *error = json_error_expecting_index(w_begin);
+            return error_index;
+        }
+        go_next();
+        if (error->abort) {
+            json_decref(index_simple);
+            return error_index;
+        }
+        return (path_ind == PATH_IND_DOT) ? build_simple_index(index_simple)
+                                          : build_recursive_index(index_simple);
+    }
+    case PATH_IND_LBR: {
+        path_index_t ret = parse_index_sub(pw_begin, w_end, error);
+        if (ret.tag == INDEX_MAX) return ret;
+        if (is_punctor(word_peek, ']')) {
+            go_next();
+            if (error->abort) {
+                index_release(ret);
+                return error_index;
+            }
+            return ret;
+        } else {
+            index_release(ret);
+            error->abort = true;
+            error->code = 0x600000005u;
+            error->reason = "expecting ']'";
+            error->extra = w_begin;
+            return error_index;
+        }
+    }
+    default:
+        assert(false);
+        return error_index;
+    }
 }
 
 static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
@@ -533,7 +545,7 @@ static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath
 	}
 	if(is_empty){
 		error->abort = true;
-		error->code = 0x88;
+		error->code = 0x800000008u;
 		error->reason = "expecting path";
 		error->extra = w_begin;
 		jsonpath_release(root);
@@ -580,7 +592,7 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 				long value = strtol(number, NULL, radix);
 				if (value > UCHAR_MAX) {
 					error->abort = true;
-					error->code = 0x86;
+					error->code = 0x200000006u;
 					error->reason = "not representable charactor in escape sequnence";
 					error->extra = (void*)iter;
 					break;
@@ -597,13 +609,13 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 				++iter;
 			}else{
 				static const char esc_map[26] = {//abfnrtv
-					0,['a' - 'a'] = '\a',['f' - 'a'] = '\f',['n' - 'a'] = '\n',['r' - 'a'] = '\r',['t' - 'a'] = '\t',['v' - 'a'] = '\v'
+					['a' - 'a'] = '\a',['f' - 'a'] = '\f',['n' - 'a'] = '\n',['r' - 'a'] = '\r',['t' - 'a'] = '\t',['v' - 'a'] = '\v',0
 				};
 				char result = 0;
 				if (isalpha(*iter))result = esc_map[*iter - 'a'];
 				if(!result){
 					error->abort = true;
-					error->code = 0x84;
+					error->code = 0x200000004u;
 					error->reason = "unknown escape";
 					error->extra = (void*)iter;
 					break;
@@ -739,7 +751,7 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 			jsonpath_release(ret);
 			ret = NULL;
 			error->abort = true;
-			error->code = 0x91;
+			error->code = 0x800000001u;
 			error->reason = "jsonpath not ended correctly";
 			error->extra = (void*)w_begin;
 		}
@@ -750,7 +762,7 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 	return ret;
 }
 
-JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, jsonpath_error_t* error){
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, jsonpath_error_t* error) {
 	return jsonpath_compile_ranged(jsonpath_begin, NULL, error);
 }
 

@@ -1,0 +1,13 @@
+#ifndef JANSSON_PATH_CONF_H
+#define JANSSON_PATH_CONF_H
+
+#define JANSSONPATH_VERSION_MAJOR 2
+#define JANSSONPATH_VERSION_MINOR 0
+
+#define ENGINE_system_regex 1
+#define ENGINE_PCRE2 2
+
+/* #undef JANSSONPATH_SUPPORT_REGEX */
+#define REGEX_ENGINE ENGINE_
+
+#endif

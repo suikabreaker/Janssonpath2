@@ -21,31 +21,22 @@ string_slice JANSSONPATH_NO_EXPORT next_nonspace_lexeme(
 #define is_eof IS_SLICE_EMPTY
 
 // expect them to be inlined
-static bool is_number(string_slice input) {
-	return !IS_SLICE_EMPTY(input) &&
-		((isascii(input.begin[0]) && isdigit(input.begin[0])) ||
-		((input.begin[0] == '.') && input.end - input.begin > 1 && (input.begin[1] != '.')));
-}
+#define is_number(input)(!IS_SLICE_EMPTY(input) &&\
+		((isascii((input).begin[0]) && isdigit((input).begin[0])) ||\
+		(((input).begin[0] == '.') && (input).end - (input).begin > 1 && ((input).begin[1] != '.')))\
+)
 
-static bool is_identifier(string_slice input) {
-	if (IS_SLICE_EMPTY(input))return false;
-	char first = input.begin[0];
-	return !isascii(first) || isalpha(first) || first == '_';
-}
+#define is_identifier(input) (!IS_SLICE_EMPTY(input)&&(\
+!isascii((input).begin[0]) || isalpha((input).begin[0]) || (input).begin[0] == '_'\
+))
 
-static int is_string(string_slice input){
-    return !IS_SLICE_EMPTY(input) && (input.begin[0]=='"' ||
-		input.begin[0] == '\'');
-}
+#define is_string(input)(!IS_SLICE_EMPTY(input) && ((input).begin[0]=='"' ||\
+		(input).begin[0] == '\''))
 
-static bool is_punctor(string_slice input, char punc) {
-	return !IS_SLICE_EMPTY(input) && input.begin[0] == punc &&
-		input.begin + 1 == input.end;
-}
+#define is_punctor(input, punc)(!IS_SLICE_EMPTY(input) && (input).begin[0] == punc &&\
+		(input).begin + 1 == (input).end)
 
-static bool is_space(string_slice input) {
-	return !IS_SLICE_EMPTY(input) && isascii(input.begin[0]) &&
-		isspace(input.begin[0]);
-}
+#define is_space(input) (!IS_SLICE_EMPTY(input) && isascii((input).begin[0]) && \
+		isspace((input).begin[0]))
 
 #endif

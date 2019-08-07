@@ -1,16 +1,17 @@
+#include <string.h>
 #include "jansson.h"
+#include "janssonpath_evaluate.h"
 #include "private/common.h"
+#include "private/error.h"
 #include "private/jansson_memory.h"
 #include "private/jsonpath_ast.h"
-#include "janssonpath_evaluate.h"
-#include <string.h>
 
 #ifdef JANSSONPATH_SUPPORT_REGEX
 #include "private/regex_impl.h"
 #endif
 
 static const jsonpath_error_t jsonpath_error_collection_oprand = {
-	true, 0xAA, "Collection used as oprand in incompatible opration", NULL
+	true, 0x80000000Au, "Collection used as oprand in incompatible opration", NULL
 };
 
 static jsonpath_function get_function(jsonpath_function_table_t* function_table, const char* name){
@@ -287,7 +288,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_resu
 	return ret;
 }
 
-static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs, jsonpath_error_t* error) {
+static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs) {
 	// we don't abort at type error. instead we return NULL
 	switch(operator_){
 	case BINARY_ADD: {
@@ -485,16 +486,16 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 
 
 static jsonpath_result_t binary_deal_with_collection(
-	path_binary_tag_t operator_, jsonpath_result_t lhs, jsonpath_result_t rhs, jsonpath_error_t* error
+	path_binary_tag_t operator_, jsonpath_result_t lhs, jsonpath_result_t rhs
 ) {
 	if (!lhs.is_collection) {
-		return make_result_new(json_binary(operator_, lhs.value, rhs.value, error), false, true, lhs.is_constant && rhs.is_constant);
+		return make_result_new(json_binary(operator_, lhs.value, rhs.value), false, true, lhs.is_constant && rhs.is_constant);
 	}
 	else {
 		size_t index; json_t* value;
 		jsonpath_result_t ret = make_result_new(json_array(), true, true, lhs.is_constant && rhs.is_constant);
 		json_array_foreach(lhs.value, index, value) {
-			json_t* mapped_element = json_binary(operator_, value, rhs.value, error);
+			json_t* mapped_element = json_binary(operator_, value, rhs.value);
 			json_array_append_new(ret.value, mapped_element);
 		}
 		return ret;
@@ -517,7 +518,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_binary(json_t* root, jsonpath_re
 		goto rhs_release;
 	}
 
-	ret = binary_deal_with_collection(jsonpath.tag, lhs_result, rhs_result, error);
+	ret = binary_deal_with_collection(jsonpath.tag, lhs_result, rhs_result);
 rhs_release:
 	jsonpath_decref(rhs_result);
 lhs_release:
@@ -531,10 +532,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath
 	assert(json_is_string(jsonpath.func_name));
 	jsonpath_function func = get_function(function_table, json_string_value(jsonpath.func_name));
 	if (!func) {
-		error->abort = true;
-		error->code = 0xa1;
-		error->reason = "Function not found in the table";
-		error->extra = (void*)jsonpath.func_name;
+		*error = jsonpath_error_function_not_found(json_string_value(jsonpath.func_name));
 		return error_result;
 	}
 
@@ -603,39 +601,42 @@ static jsonpath_result_t unary_deal_with_collection(
 	}
 }
 
-static jsonpath_result_t evaluate_unary(path_unary_tag_t op, jsonpath_result_t oprand, jsonpath_error_t* error){
-	jsonpath_result_t ret = error_result;
-	switch(op){
-	case UNARY_NOT:
-		return unary_deal_with_collection(oprand, json_not);
-	case UNARY_POS:
-		return jsonpath_incref(oprand);
-	case UNARY_NEG:
-		return unary_deal_with_collection(oprand, json_neg);
-	case UNARY_TO_ARRAY:
-		if (oprand.is_collection) ret =  make_result(oprand.value, false, true, oprand.is_constant); // its content can be left value and it cannot be recovered by from_list
-		else{
-			error->abort = true;
-			error->code = 0xa3;
-			error->reason = "to_array(&) expecting collection oprand";
-			error->extra = NULL;
-		}
-		break;
-	// should not apply to collection, as it breaks rule of *&x = x = &* x
-	case UNARY_FROM_ARRAY:
-		if (!oprand.is_collection && json_is_array(oprand.value)) ret = make_result(oprand.value, true, oprand.is_right_value, oprand.is_constant);
-		else {
-			error->abort = true;
-			error->code = 0xa4;
-			error->reason = "from_array(*) expecting array(non-collection)";
-			error->extra = NULL;
-		}
-		break;
-	case UNARY_BITNOT:
-		return unary_deal_with_collection(oprand, json_bitnot);
-	default: break;
-	}
-	return ret;
+static jsonpath_result_t evaluate_unary(path_unary_tag_t op,
+                                        jsonpath_result_t oprand,
+                                        jsonpath_error_t* error) {
+    jsonpath_result_t ret = error_result;
+    switch (op) {
+    case UNARY_NOT:
+        return unary_deal_with_collection(oprand, json_not);
+    case UNARY_POS:
+        return jsonpath_incref(oprand);
+    case UNARY_NEG:
+        return unary_deal_with_collection(oprand, json_neg);
+    case UNARY_TO_ARRAY:
+        if (oprand.is_collection)
+            ret = make_result(
+                oprand.value, false, true,
+                oprand.is_constant);  // its content can be left value and it
+                                      // cannot be recovered by from_list
+        else {
+            *error = jsonpath_error_to_array_non_collection;
+        }
+        break;
+    // should not apply to collection, as it breaks rule of *&x = x = &* x
+    case UNARY_FROM_ARRAY:
+        if (!oprand.is_collection && json_is_array(oprand.value))
+            ret = make_result(oprand.value, true, oprand.is_right_value,
+                              oprand.is_constant);
+        else {
+            *error = jsonpath_error_from_array_collection;
+        }
+        break;
+    case UNARY_BITNOT:
+        return unary_deal_with_collection(oprand, json_bitnot);
+    default:
+        break;
+    }
+    return ret;
 }
 
 static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {

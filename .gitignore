@@ -4,3 +4,7 @@
 
 /.vs
 /out/build/x64-Debug
+CMakeCache.txt
+CMakeLists.txt
+.vscode
+CMakeFiles
