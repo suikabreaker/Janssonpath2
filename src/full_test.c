@@ -7,12 +7,19 @@
 #define bool_to_check(boolean) ((boolean)?'*': ' ')
 
 static void output_result(jsonpath_result_t result){
-	printf("collection:[%c], right_value:[%c], constant:[%c]\n", bool_to_check(result.is_collection), bool_to_check(result.is_right_value), bool_to_check(result.is_constant));
+	if(result.value){
+		if (result.is_collection && json_array_size(result.value))
+			printf("result[0].refcount= %zd\n", json_array_get(result.value, 0)->refcount);
+		printf("result.refcount= %zd\n", result.value->refcount);
+	}
+	printf("collection[%c] right_value[%c] constant[%c]\n", bool_to_check(result.is_collection), bool_to_check(result.is_right_value), bool_to_check(result.is_constant));
 	json_t* root = json_array();
 	json_array_append(root, result.value);
 	char* out = json_dumps(root, JSON_INDENT(2) | JSON_EMBED);
-	puts(out);
-	free(out);
+	if(out){
+		puts(out);
+		free(out);
+	}
 	json_decref(root);
 }
 
@@ -48,8 +55,9 @@ int test(json_t* json, const char* test_path){
 			goto result1_;
 		}
 	}
-	puts("second time evaluated to:");
+	puts("second time evaluated to(note that first result is not released yet):");
 	output_result(result2);
+
 	jsonpath_decref(result2);
 result1_:
 	jsonpath_decref(result);
@@ -68,9 +76,12 @@ int main(int argc, char** argv) {
 		while (scanf(" %[^\n]", buffer) > 0) {
 			test(json, buffer);
 		}
+		json_decref(json);
 		return 0;
 	}else{
 		json_t* json = json_load_file(argv[1], JSON_DECODE_ANY | JSON_ALLOW_NUL, &error);
-		return test(json, argv[2]);
+		int ret = test(json, argv[2]);
+		json_decref(json);
+		return ret;
 	}
 }

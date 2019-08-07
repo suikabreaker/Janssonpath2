@@ -43,7 +43,7 @@ static jansson_regex_t* regex_compile(const char* pattern, jsonpath_error_t* err
 	size_t offset;
 	int errorcode;
 	static char error_msg[1024]; 
-	jansson_regex_t* ret = pcre2_compile((PCRE2_SPTR8)pattern, PCRE2_ZERO_TERMINATED, PCRE2_ANCHORED | PCRE2_UTF | PCRE2_NO_AUTO_CAPTURE | PCRE2_EXTENDED, &errorcode, &offset, NULL);
+	jansson_regex_t* ret = pcre2_compile((PCRE2_SPTR8)pattern, PCRE2_ZERO_TERMINATED, PCRE2_UTF | PCRE2_NO_AUTO_CAPTURE | PCRE2_EXTENDED, &errorcode, &offset, NULL);
 	if(errorcode!=100){
 		pcre2_get_error_message(errorcode, (PCRE2_UCHAR8*)error_msg, 1024); // why it need a buffer???
 		error->abort = true;
@@ -59,7 +59,7 @@ static jansson_regex_t* regex_compile(const char* pattern, jsonpath_error_t* err
 
 static bool regex_match(const char* subject, jansson_regex_t* regex) {
 	pcre2_match_data* match_data= pcre2_match_data_create(16, NULL);
-	int n = pcre2_match(regex, (PCRE2_SPTR8)subject, PCRE2_ZERO_TERMINATED, 0, PCRE2_ANCHORED, match_data, NULL);
+	int n = pcre2_match(regex, (PCRE2_SPTR8)subject, PCRE2_ZERO_TERMINATED, 0, 0, match_data, NULL);
 	pcre2_match_data_free(match_data);
 	assert(n != 0); // do not use capature!
 	assert(n >= -1); // -1 for no match

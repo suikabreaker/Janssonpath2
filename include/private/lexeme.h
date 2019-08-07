@@ -24,7 +24,7 @@ string_slice JANSSONPATH_NO_EXPORT next_nonspace_lexeme(
 static bool is_number(string_slice input) {
 	return !IS_SLICE_EMPTY(input) &&
 		((isascii(input.begin[0]) && isdigit(input.begin[0])) ||
-		((input.begin[0] == '.') && input.end - input.begin > 1));
+		((input.begin[0] == '.') && input.end - input.begin > 1 && (input.begin[1] != '.')));
 }
 
 static bool is_identifier(string_slice input) {

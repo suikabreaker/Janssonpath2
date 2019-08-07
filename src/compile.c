@@ -81,8 +81,9 @@ static void add_index(jsonpath_t* index_node, path_index_t index) {
 	assert(index_node->tag == JSON_INDEX);
 	path_indexes_t* indexes = &index_node->indexes;
 	if (indexes->size + 1 > indexes->capacity) {
-		path_index_t* new_nodes = do_malloc(sizeof(path_index_t) * indexes->capacity * 2);
-		memcpy(new_nodes, indexes->indexes, indexes->size);
+		indexes->capacity *= 2;
+		path_index_t* new_nodes = do_malloc(sizeof(path_index_t) * indexes->capacity);
+		memcpy(new_nodes, indexes->indexes, sizeof(path_index_t) * indexes->size);
 		do_free(indexes->indexes);
 		indexes->indexes = new_nodes;
 	}
@@ -138,8 +139,9 @@ static void add_oprand_arbitrary(jsonpath_t* arbitrary_node, jsonpath_t* oprand)
 	assert(arbitrary_node->tag == JSON_ARBITRAY);
 	path_arbitrary_t* arbitrary = &arbitrary_node->arbitrary;
 	if (arbitrary->size + 1 > arbitrary->capacity) {
-		jsonpath_t** new_nodes = do_malloc(sizeof(jsonpath_t*) * arbitrary->capacity * 2);
-		memcpy(new_nodes, arbitrary->nodes, arbitrary->size);
+		arbitrary->capacity *= 2;
+		jsonpath_t** new_nodes = do_malloc(sizeof(jsonpath_t*) * arbitrary->capacity);
+		memcpy(new_nodes, arbitrary->nodes, sizeof(jsonpath_t*) * arbitrary->size);
 		do_free(arbitrary->nodes);
 		arbitrary->nodes = new_nodes;
 	}
@@ -373,8 +375,8 @@ static jsonpath_t* match_brackets(const char** pw_begin, const char* w_end, json
 
 static jsonpath_t* parse_arbitray(const char** pw_begin, const char* w_end, jsonpath_error_t* error) {
 	assert(is_identifier(word_peek)); // should we accept string/calculated function name?
-	
-	jsonpath_t* func_call = build_func_call(json_stringn(word_peek.begin, SLICE_SIZE(word_peek)));
+	json_t* func_name = json_stringn_nocheck(word_peek.begin, SLICE_SIZE(word_peek));
+	jsonpath_t* func_call = build_func_call(func_name);
 	do{
 		go_next();
 		if (error->abort) break;
@@ -449,7 +451,7 @@ static path_index_t parse_index(path_indicate path_ind, const char** pw_begin, c
 	case PATH_IND_DDOT: {
 		json_t* index_simple = NULL;
 		if (is_identifier(word_peek)) {
-			index_simple = json_stringn(word_peek.begin, SLICE_SIZE(word_peek));
+			index_simple = json_stringn_nocheck(word_peek.begin, SLICE_SIZE(word_peek));
 		}
 		else if (is_punctor(word_peek, '*')) {
 			index_simple = NULL;
@@ -622,7 +624,7 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 
 	if (!error->abort) {
 		assert(*iter == delima && iter + 1 == end);
-		ret = json_stringn(buffer, buffer_iter - buffer);
+		ret = json_stringn_nocheck(buffer, buffer_iter - buffer);
 	}
 	do_free(buffer);
 	return ret;

@@ -34,7 +34,7 @@ static void jsonpath_constant_fold(jsonpath_t* jsonpath, jsonpath_result_t value
 
 static jsonpath_result_t jsonpath_evaluate_impl_constant_fold(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
 	if(jsonpath->tag == JSON_CONSTANT){
-		return jsonpath->constant_result;
+		return jsonpath_incref(jsonpath->constant_result);
 	}
 	jsonpath_result_t ret = jsonpath_evaluate_impl_basic(root, curr_element, jsonpath, function_table, error);
 	if (!error->abort && ret.is_constant) {
@@ -47,10 +47,16 @@ static jsonpath_result_t jsonpath_evaluate_impl_constant_fold(json_t* root, json
 #define jsonpath_evaluate_impl jsonpath_evaluate_impl_basic
 #endif
 
-static jsonpath_result_t make_result(json_t *value, bool is_collection, bool is_right_value, bool is_constant){
+static jsonpath_result_t make_result_new(json_t *value, bool is_collection, bool is_right_value, bool is_constant){
 	jsonpath_result_t ret = { value,is_collection,is_right_value,is_constant };
 	return ret;
 }
+
+static jsonpath_result_t make_result(json_t* value, bool is_collection, bool is_right_value, bool is_constant) {
+	return make_result_new(json_incref(value), is_collection, is_right_value, is_constant);
+}
+
+#define make_result_borrow make_result_new
 
 static json_t* json_object_to_array(json_t *object){
 	assert(json_is_object(object));
@@ -68,7 +74,7 @@ static jsonpath_result_t path_deal_with_collection(
 );
 
 static json_t* json_get_all_property(json_t* node){
-	if (json_is_array(node)) return json_incref(node);
+	if (json_is_array(node)) return json_incref(node); // simple optimization
 	else if (json_is_object(node)) return json_object_to_array(node);
 	else return json_array();
 }
@@ -77,20 +83,20 @@ static json_t* json_get_all_property(json_t* node){
 static long long json_array_index_translate(json_int_t index, size_t array_size){
 	if (index < 0) index = array_size + index; // for -n
 	long long ret = (index < 0) ? 0 : index;
-	if (ret >= array_size) ret = array_size - 1;
+	if ((size_t)ret >= array_size) ret = array_size - 1;
 	return ret;
 }
 
 static jsonpath_result_t jsonpath_evaluate_impl_simple_index(jsonpath_result_t node, json_t* simple_index){
 	assert(!node.is_collection);
 	if (!simple_index) { // *
-		return make_result(json_get_all_property(node.value), true, node.is_right_value, node.is_constant);
+		return make_result_new(json_get_all_property(node.value), true, node.is_right_value, node.is_constant);
 	}
 	else if (json_is_string(simple_index)) {
 		return make_result(json_object_get(node.value, json_string_value(simple_index)), false, node.is_right_value, node.is_constant);
 	}
 	else if (json_is_number(simple_index)) {
-		if (json_is_array(node.value)) return error_result;
+		if (!json_is_array(node.value)) return error_result;
 		json_int_t index = json_is_integer(simple_index) ? json_integer_value(simple_index) : (json_int_t)json_real_value(simple_index);
 		size_t array_size = json_array_size(node.value);
 		long long translated_index = json_array_index_translate(index, array_size);
@@ -107,20 +113,22 @@ static jsonpath_result_t jsonpath_evaluate_impl_simple_index(jsonpath_result_t n
 		else {
 			size = 0;
 		}
-		return make_result(json_integer(size), false, true, node.is_constant);
+		return make_result_new(json_integer(size), false, true, node.is_constant);
 	}else{
 		return error_result;
 	}
 }
 
-static jsonpath_result_t jsonpath_evaluate_impl_path_simple(json_t* root, jsonpath_result_t curr_element, jsonpath_result_t node, path_index_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
+static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpath_result_t curr_element, jsonpath_result_t node, path_index_t jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error) {
 	assert(!node.is_collection);
 	switch (jsonpath.tag) {
 	case INDEX_SUB_SIMPLE:
 		return jsonpath_evaluate_impl_simple_index(node, jsonpath.simple_index);
 	case INDEX_DOT_RECURSIVE: {
 		json_t* layer = json_get_all_property(node.value);
-		json_t* all_node = json_incref(layer);
+		json_t* all_node = json_array();
+		json_array_append(all_node, node.value);
+		json_array_append(all_node, layer);
 		while(json_array_size(layer)){
 			json_t* new_layer = json_array();
 			size_t index; json_t* value;
@@ -185,10 +193,10 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_simple(json_t* root, jsonpa
 		// doesn't matter if it returns -1
 		long long begin = json_array_index_translate(index[0], array_size), end = json_array_index_translate(index[1], array_size);
 		
-		ret = make_result(json_array(), true, true, node.is_constant && range_json[0].is_constant && range_json[1].is_constant);
-		size_t i;
+		ret = make_result_new(json_array(), true, true, node.is_constant && range_json[0].is_constant && range_json[1].is_constant);
+		long long i;
 		for(i=begin;i<end;++i){
-			json_array_append(ret.value, json_array_get(node.value, i));
+			json_array_append(ret.value, json_array_get(node.value, (size_t)i));
 		}
 
 	range1:
@@ -200,7 +208,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_simple(json_t* root, jsonpa
 	case INDEX_FILTER: {
 
 #define for_body {\
-		jsonpath_result_t curr = make_result(value, false, false, false);\
+		jsonpath_result_t curr = make_result_borrow(value, false, false, false);\
 		jsonpath_result_t cond = jsonpath_evaluate_impl(root, curr, jsonpath.expression, function_table, error);\
 		if (error->abort)goto fail;\
 		if (cond.is_collection) {\
@@ -208,16 +216,16 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_simple(json_t* root, jsonpa
 			*error = jsonpath_error_collection_oprand;\
 			goto fail;\
 		}\
-		if (json_is_true(curr.value))json_array_append(ret.value, value);\
-		jsonpath_decref(curr);\
+		if (json_is_true(cond.value))json_array_append(ret.value, value);\
+		jsonpath_decref(cond);\
 		}
 
-		jsonpath_result_t ret = make_result(json_array(), true, true, node.is_constant);
+		jsonpath_result_t ret = make_result_new(json_array(), true, true, node.is_constant);
 		if(json_is_object(node.value)){
 			const char* key; json_t* value;
 			json_object_foreach(node.value, key, value) for_body
 			return ret;
-		}else if (json_is_object(node.value)) {
+		}else if (json_is_array(node.value)) {
 			size_t index; json_t* value;
 			json_array_foreach(node.value, index, value) for_body
 			return ret;
@@ -239,13 +247,13 @@ static jsonpath_result_t path_deal_with_collection(
 	path_index_t operator_, jsonpath_result_t node, jsonpath_function_table_t* function_table, jsonpath_error_t* error
 ) {
 	if (!node.is_collection) {
-		return jsonpath_evaluate_impl_path_simple(root, curr_element, node, operator_, function_table, error);
+		return jsonpath_evaluate_impl_path_single(root, curr_element, node, operator_, function_table, error);
 	}
 	else {
 		size_t index; json_t* value;
-		jsonpath_result_t ret = make_result(json_array(), true, true, node.is_constant);
+		jsonpath_result_t ret = make_result_new(json_array(), true, true, node.is_constant);
 		json_array_foreach(node.value, index, value) {
-			jsonpath_result_t mapped_element = jsonpath_evaluate_impl_path_simple(root, curr_element, make_result(value,false,node.is_right_value,node.is_constant), operator_, function_table, error);
+			jsonpath_result_t mapped_element = jsonpath_evaluate_impl_path_single(root, curr_element, make_result_borrow(value,false,node.is_right_value,node.is_constant), operator_, function_table, error);
 			if (error->abort) {
 				jsonpath_decref(ret);
 				return error_result;
@@ -285,7 +293,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_ADD: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_real(json_real_value(lhs) + json_real_value(rhs));
+			return json_real(json_number_value(lhs) + json_number_value(rhs));
 		}else {
 			return json_integer(json_integer_value(lhs) + json_integer_value(rhs));
 		}
@@ -293,7 +301,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_MNU: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_real(json_real_value(lhs) - json_real_value(rhs));
+			return json_real(json_number_value(lhs) - json_number_value(rhs));
 		}else {
 			return json_integer(json_integer_value(lhs) - json_integer_value(rhs));
 		}
@@ -301,7 +309,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_MUL: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_real(json_real_value(lhs) * json_real_value(rhs));
+			return json_real(json_number_value(lhs) * json_number_value(rhs));
 		}else {
 			return json_integer(json_integer_value(lhs) * json_integer_value(rhs));
 		}
@@ -420,7 +428,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_LT: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_boolean(json_real_value(lhs) < json_real_value(rhs));
+			return json_boolean(json_number_value(lhs) < json_number_value(rhs));
 		}
 		else {
 			return json_boolean(json_integer_value(lhs) < json_integer_value(rhs));
@@ -429,7 +437,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_GT: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_boolean(json_real_value(lhs) > json_real_value(rhs));
+			return json_boolean(json_number_value(lhs) > json_number_value(rhs));
 		}
 		else {
 			return json_boolean(json_integer_value(lhs) > json_integer_value(rhs));
@@ -438,7 +446,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_LE: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_boolean(json_real_value(lhs) <= json_real_value(rhs));
+			return json_boolean(json_number_value(lhs) <= json_number_value(rhs));
 		}
 		else {
 			return json_boolean(json_integer_value(lhs) <= json_integer_value(rhs));
@@ -447,7 +455,7 @@ static json_t* json_binary(path_binary_tag_t operator_, json_t* lhs, json_t* rhs
 	case BINARY_GE: {
 		if (!json_is_number(lhs) || !json_is_number(rhs)) return NULL;
 		if (json_is_real(lhs) || json_is_real(rhs)) {
-			return json_boolean(json_real_value(lhs) >= json_real_value(rhs));
+			return json_boolean(json_number_value(lhs) >= json_number_value(rhs));
 		}
 		else {
 			return json_boolean(json_integer_value(lhs) >= json_integer_value(rhs));
@@ -480,11 +488,11 @@ static jsonpath_result_t binary_deal_with_collection(
 	path_binary_tag_t operator_, jsonpath_result_t lhs, jsonpath_result_t rhs, jsonpath_error_t* error
 ) {
 	if (!lhs.is_collection) {
-		return make_result(json_binary(operator_, lhs.value, rhs.value, error), false, true, lhs.is_constant && rhs.is_constant);
+		return make_result_new(json_binary(operator_, lhs.value, rhs.value, error), false, true, lhs.is_constant && rhs.is_constant);
 	}
 	else {
 		size_t index; json_t* value;
-		jsonpath_result_t ret = make_result(json_array(), true, true, lhs.is_constant && rhs.is_constant);
+		jsonpath_result_t ret = make_result_new(json_array(), true, true, lhs.is_constant && rhs.is_constant);
 		json_array_foreach(lhs.value, index, value) {
 			json_t* mapped_element = json_binary(operator_, value, rhs.value, error);
 			json_array_append_new(ret.value, mapped_element);
@@ -544,7 +552,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_arbitrary(json_t* root, jsonpath
 		if (error->abort) goto args_release;
 		args[arg_n] = arg.value;
 	}
-	ret = make_result(func(args, jsonpath.size), false, true, false);
+	ret = make_result_new(func(args, jsonpath.size), false, true, false);
 	size_t i;
 args_release: // simple dumb C have no label break, so even do{}while(0); does not work here
 	for(i=0;i<arg_n;++i) json_decref(args[i]);
@@ -583,10 +591,10 @@ static jsonpath_result_t unary_deal_with_collection(
 	jsonpath_result_t origin_result, json_t* (*operator_)(json_t*)
 ){
 	if (!origin_result.is_collection) {
-		return make_result(operator_(origin_result.value), false, true, origin_result.is_constant);
+		return make_result_new(operator_(origin_result.value), false, true, origin_result.is_constant);
 	}else{
 		size_t index; json_t* value;
-		jsonpath_result_t ret = make_result(json_array(), true, true, origin_result.is_constant);
+		jsonpath_result_t ret = make_result_new(json_array(), true, true, origin_result.is_constant);
 		json_array_foreach(origin_result.value,index,value){
 			json_t* mapped_element = operator_(value);
 			json_array_append_new(ret.value, mapped_element);
@@ -605,19 +613,23 @@ static jsonpath_result_t evaluate_unary(path_unary_tag_t op, jsonpath_result_t o
 	case UNARY_NEG:
 		return unary_deal_with_collection(oprand, json_neg);
 	case UNARY_TO_ARRAY:
-		if (oprand.is_collection) ret =  make_result(json_incref(oprand.value), false, true, oprand.is_constant); // its content can be left value and it cannot be recovered by from_list
-		error->abort = true;
-		error->code = 0xa3;
-		error->reason = "to_array(&) expecting collection oprand";
-		error->extra = NULL;
+		if (oprand.is_collection) ret =  make_result(oprand.value, false, true, oprand.is_constant); // its content can be left value and it cannot be recovered by from_list
+		else{
+			error->abort = true;
+			error->code = 0xa3;
+			error->reason = "to_array(&) expecting collection oprand";
+			error->extra = NULL;
+		}
 		break;
 	// should not apply to collection, as it breaks rule of *&x = x = &* x
 	case UNARY_FROM_ARRAY:
-		if (!oprand.is_collection && json_is_array(oprand.value)) ret = make_result(json_incref(oprand.value), true, oprand.is_right_value, oprand.is_constant);
-		error->abort = true;
-		error->code = 0xa4;
-		error->reason = "from_array(*) expecting array(non-collection)";
-		error->extra = NULL;
+		if (!oprand.is_collection && json_is_array(oprand.value)) ret = make_result(oprand.value, true, oprand.is_right_value, oprand.is_constant);
+		else {
+			error->abort = true;
+			error->code = 0xa4;
+			error->reason = "from_array(*) expecting array(non-collection)";
+			error->extra = NULL;
+		}
 		break;
 	case UNARY_BITNOT:
 		return unary_deal_with_collection(oprand, json_bitnot);
@@ -632,11 +644,11 @@ static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_res
 	case JSON_SINGLE:// single does not promote to collection
 		switch (jsonpath->single.tag) {
 		case SINGLE_ROOT:
-			return make_result(json_incref(root), false, false, false);
+			return make_result(root, false, false, false);
 		case SINGLE_CURR:
 			return jsonpath_incref(curr_element);
 		case SINGLE_CONST:
-			return make_result(json_incref(jsonpath->single.constant), false, true, true);
+			return make_result(jsonpath->single.constant, false, true, true);
 		default: break;
 		}
 	case JSON_INDEX:
@@ -660,9 +672,7 @@ static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_res
 
 JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_table_t* function_table, jsonpath_error_t* error){
 	*error = jsonpath_error_ok;
-	json_t* dup_root = json_incref(root);
-	jsonpath_result_t root_curr = make_result(dup_root, false, false, false);
+	jsonpath_result_t root_curr = make_result_new(root, false, false, false);
 	jsonpath_result_t ret = jsonpath_evaluate_impl(root, root_curr, jsonpath, function_table, error);
-	json_decref(dup_root);
 	return ret;
 }
