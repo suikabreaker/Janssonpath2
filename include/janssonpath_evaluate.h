@@ -50,7 +50,7 @@ typedef enum jsonpath_callable_tag_t{
 	JSONPATH_CALLABLE_PLAIN, JSONPATH_CALLABLE_BIND, JSONPATH_CALLABLE_MAX
 } jsonpath_callable_tag_t;
 
-typedef struct jsonpath_function_generator_t {
+typedef struct jsonpath_function_lookup_t {
 	jsonpath_callable_tag_t tag;
 	union{
 		jsonpath_function_table_t plain_table;
@@ -59,13 +59,18 @@ typedef struct jsonpath_function_generator_t {
 			void* bind_context;
 		};
 	};
+}jsonpath_function_lookup_t;
 
+typedef json_t* (*jsonpath_variable_lookup_t)(const char*);
 
-}jsonpath_function_generator_t;
+typedef struct jsonpath_symbol_lookup_t {
+	jsonpath_function_lookup_t function_lookup;
+	jsonpath_variable_lookup_t variable_lookup;
+}jsonpath_symbol_lookup_t;
 
 struct jsonpath_t;
 typedef struct jsonpath_t jsonpath_t;
-JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error);
+JANSSONPATH_EXPORT jsonpath_result_t jsonpath_evaluate(json_t* root, jsonpath_t* jsonpath, jsonpath_symbol_lookup_t* symbols, jsonpath_error_t* error);
 
 #ifdef __cplusplus
 }
