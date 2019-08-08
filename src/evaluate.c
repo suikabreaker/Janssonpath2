@@ -198,9 +198,17 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 		return ret;
 	}
 	case INDEX_SUB_EXP: {
+		jsonpath_result_t ret = error_result;
 		jsonpath_result_t sub_exp_result = jsonpath_evaluate_impl(root, curr_element, jsonpath.expression, function_gen, error);
-		if (error->abort) return error_result;
-		jsonpath_result_t ret =jsonpath_evaluate_impl_simple_index(node, sub_exp_result.value);
+		if (error->abort) return ret;
+		if (!sub_exp_result.is_collection) {
+			ret = jsonpath_evaluate_impl_simple_index(node, sub_exp_result.value);
+		}else {
+			*error = jsonpath_error_collection_oprand;
+		}
+
+		// don't mix up with .* 
+		if (!sub_exp_result.value) return make_result_new(NULL, node.is_collection, node.is_right_value, node.is_constant && sub_exp_result.is_constant);
 		jsonpath_decref(sub_exp_result);
 		return ret;
 	}
@@ -317,15 +325,16 @@ static jsonpath_result_t path_deal_with_collection(
 	}
 }
 
-// note that root is absolute, thus second $ in (*$.a[1:20])[$.index] does not refer to (*$.a[1:20])
+// note that root is relative, thus second $ in (*$.a[1:20])[$.index] refers to (*$.a[1:20])
 static jsonpath_result_t jsonpath_evaluate_impl_path(json_t* root, jsonpath_result_t curr_element, path_indexes_t jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error){
 	// inner expression will take curr_root as their curr_element
-	jsonpath_result_t ret = jsonpath_evaluate_impl(root, curr_element, jsonpath.root_node, function_gen, error);
+	jsonpath_result_t new_root = jsonpath_evaluate_impl(root, curr_element, jsonpath.root_node, function_gen, error);
+	jsonpath_result_t ret = jsonpath_incref(new_root);
 	if (error->abort) return error_result;
 
 	size_t i;
 	for (i = 0; i < jsonpath.size; ++i) {
-		jsonpath_result_t new_ret = path_deal_with_collection(root, ret, jsonpath.indexes[i], ret, function_gen, error);
+		jsonpath_result_t new_ret = path_deal_with_collection(new_root.value, ret, jsonpath.indexes[i], ret, function_gen, error);
 		jsonpath_decref(ret);
 		if (error->abort) return error_result;
 		ret = new_ret;
@@ -687,7 +696,6 @@ static jsonpath_result_t evaluate_unary(path_unary_tag_t op,
 }
 
 static jsonpath_result_t jsonpath_evaluate_impl_basic(json_t* root, jsonpath_result_t curr_element, jsonpath_t* jsonpath, jsonpath_function_generator_t* function_gen, jsonpath_error_t* error) {
-	assert(!curr_element.is_collection);
 	switch (jsonpath->tag) {
 	case JSON_SINGLE:// single does not promote to collection
 		switch (jsonpath->single.tag) {
