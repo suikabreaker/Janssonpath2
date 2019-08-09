@@ -11,10 +11,10 @@
 # Modified at 8/1/2019 to PCRE2
 
 # Look for the header file.
-FIND_PATH(PCRE2_INCLUDE_DIR NAMES pcre2.h PCRE2.h PATHS $ENV{PCRE2_DIR}/include)
+FIND_PATH(PCRE2_INCLUDE_DIR NAMES pcre2.h PCRE2.h PATHS $ENV{PCRE2_DIR}/include $ENV{PCRE2_INCLUDE})
 
 # Look for the library.
-FIND_LIBRARY(PCRE2_LIBRARY NAMES pcre2-8d pcre2-posixd pcre2-8 pcre2-posix PATHS $ENV{PCRE2_DIR}/lib)
+FIND_LIBRARY(PCRE2_LIBRARY NAMES pcre2-8d pcre2-posixd pcre2-8 pcre2-posix PATHS $ENV{PCRE2_DIR}/lib $ENV{PCRE2_LIB})
 
 # Handle the QUIETLY and REQUIRED arguments and set PCRE_FOUND to TRUE if all listed variables are TRUE.
 INCLUDE(FindPackageHandleStandardArgs)

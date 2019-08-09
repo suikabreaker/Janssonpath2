@@ -11,10 +11,10 @@
 # Modified at 8/1/2019 to jansson
 
 # Look for the header file.
-FIND_PATH(JANSSON_INCLUDE_DIR NAMES jansson.h jansson_config.h PATHS $ENV{JANSSONPATH_DIR}/include)
+FIND_PATH(JANSSON_INCLUDE_DIR NAMES jansson.h jansson_config.h PATHS $ENV{JANSSON_DIR}/include $ENV{JANSSON_INCLUDE})
 
 # Look for the library.
-FIND_LIBRARY(JANSSON_LIBRARY NAMES jansson jansson_d PATHS $ENV{JANSSONPATH_DIR}/lib)
+FIND_LIBRARY(JANSSON_LIBRARY NAMES jansson jansson_d PATHS $ENV{JANSSON_DIR}/lib $ENV{JANSSON_LIB})
 
 # Handle the QUIETLY and REQUIRED arguments and set PCRE_FOUND to TRUE if all listed variables are TRUE.
 INCLUDE(FindPackageHandleStandardArgs)
