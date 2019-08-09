@@ -1,6 +1,11 @@
 #ifndef JANSSONPATH_EVALUATE
 #define JANSSONPATH_EVALUATE
-#include "private/common.h"
+
+#include <stdbool.h>
+#include "jansson.h"
+#include "janssonpath_conf.h"
+#include "janssonpath_export.h"
+#include "janssonpath_error.h"
 
 #ifdef __cplusplus
 extern "C" {
