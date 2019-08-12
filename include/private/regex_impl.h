@@ -13,8 +13,6 @@
 
 #include "regex.h"
 typedef regex_t jansson_regex_t;
-JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
-                                                     jsonpath_error_t* error);
 JANSSONPATH_NO_EXPORT void regex_free(jansson_regex_t* regex);
 #define regex_match(subject, regex) (!regexec((regex), (subject), 0, NULL, 0))
 
@@ -23,11 +21,21 @@ JANSSONPATH_NO_EXPORT void regex_free(jansson_regex_t* regex);
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include "pcre2.h"
 typedef pcre2_code jansson_regex_t;
-JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
-                                                     jsonpath_error_t* error);
 #define regex_free pcre2_code_free
 JANSSONPATH_NO_EXPORT bool regex_match(const char* subject,
                                        jansson_regex_t* regex);
 
+#elif JANSSONPATH_REGEX_ENGINE == ENGINE_PCRE
+
+#include "pcre.h"
+typedef pcre jansson_regex_t;
+
+JANSSONPATH_NO_EXPORT bool regex_match(const char* subject,
+	jansson_regex_t* regex);
+#define regex_free pcre_free
+
 #endif
+
+JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
+	jsonpath_error_t* error);
 #endif

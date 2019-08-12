@@ -6,10 +6,10 @@ JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
                                                      jsonpath_error_t* error) {
     static char error_msg[1024];
         jansson_regex_t ret=do_malloc(sizeof(jansson_regex_t);
-	int errorcode = regcomp(ret, pattern, REG_EXTENDED| REG_NOSUB);
-	if (errorcode) {
-        regerror(errorcode, ret, error_msg, 1024);
-        *error = jsonpath_error_regex_compile_error(errorcode, error_msg);
+	int error_code = regcomp(ret, pattern, REG_EXTENDED| REG_NOSUB);
+	if (error_code) {
+        regerror(error_code, ret, error_msg, 1024);
+        *error = jsonpath_error_regex_compile_error(error_code, error_msg);
         return NULL;
 	}
 	return ret;
@@ -26,16 +26,16 @@ JANSSONPATH_NO_EXPORT void regex_free(jansson_regex_t* regex) {
 JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
                                                      jsonpath_error_t* error) {
     size_t offset;
-    int errorcode;
+    int error_code;
     static char error_msg[1024];
     jansson_regex_t* ret =
         pcre2_compile((PCRE2_SPTR8)pattern, PCRE2_ZERO_TERMINATED,
                       PCRE2_UTF | PCRE2_NO_AUTO_CAPTURE | PCRE2_EXTENDED,
-                      &errorcode, &offset, NULL);
-    if (errorcode != 100) {
-        pcre2_get_error_message(errorcode, (PCRE2_UCHAR8*)error_msg,
+                      &error_code, &offset, NULL);
+    if (error_code != 100) {
+        pcre2_get_error_message(error_code, (PCRE2_UCHAR8*)error_msg,
                                 1024);  // why it need a buffer???
-        *error = jsonpath_error_regex_compile_error(errorcode, error_msg);
+        *error = jsonpath_error_regex_compile_error(error_code, error_msg);
         return NULL;
     }
     return ret;
@@ -51,5 +51,28 @@ JANSSONPATH_NO_EXPORT bool regex_match(const char* subject,
     assert(n >= -1);  // -1 for no match
     return n > 0;
 }
+
+#elif JANSSONPATH_REGEX_ENGINE == ENGINE_PCRE
+
+JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
+	jsonpath_error_t* error) {
+	int error_code;
+	char* error_msg;
+	int error_offset;
+	pcre* ret = pcre_compile2(pattern, PCRE_UTF8 | PCRE_NO_AUTO_CAPTURE | PCRE_EXTENDED, &error_code, &error_msg, &error_offset, NULL);
+	if(error_code)
+		* error = jsonpath_error_regex_compile_error(error_code, error_msg);
+	return ret;
+}
+
+JANSSONPATH_NO_EXPORT bool regex_match(const char* subject,
+	jansson_regex_t* regex) {
+	int ovector[16];
+	int ret = pcre_exec(regex, NULL, subject, (int)strlen(subject), 0, 0, ovector, 16);
+
+	return ret>=1;
+}
+
+
 
 #endif

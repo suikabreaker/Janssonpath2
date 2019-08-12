@@ -6,6 +6,7 @@
 
 #define ENGINE_system_regex 1
 #define ENGINE_PCRE2 2
+#define ENGINE_PCRE 3
 
 #cmakedefine HAVE_ISWASCII
 #cmakedefine JANSSONPATH_SUPPORT_REGEX
