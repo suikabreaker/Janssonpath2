@@ -57,7 +57,7 @@ JANSSONPATH_NO_EXPORT bool regex_match(const char* subject,
 JANSSONPATH_NO_EXPORT jansson_regex_t* regex_compile(const char* pattern,
 	jsonpath_error_t* error) {
 	int error_code;
-	char* error_msg;
+	const char* error_msg;
 	int error_offset;
 	pcre* ret = pcre_compile2(pattern, PCRE_UTF8 | PCRE_NO_AUTO_CAPTURE | PCRE_EXTENDED, &error_code, &error_msg, &error_offset, NULL);
 	if(error_code)
