@@ -14,7 +14,7 @@ if(MSVC)
 # /Wall could generate tons of warning even for standard library
 	add_definitions( "/W4 /D_CRT_SECURE_NO_WARNINGS /nologo /wd4201 /wd4204 /wd4214 /wd4706 /wd4996" )
 else()
-	set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic -Wmissing-declarations -Wundef -Werror=implicit-function-declaration -Wno-implicit-fallthrough -Wno-deprecated-declarations")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -Wmissing-declarations -Wundef -Werror=implicit-function-declaration -Wno-implicit-fallthrough -Wno-deprecated-declarations")
 endif()
 
 find_package(JANSSON REQUIRED)
@@ -25,6 +25,9 @@ check_function_exists(iswascii HAVE_ISWASCII)
 
 option(JANSSONPATH_SUPPORT_REGEX "Whether build jansson with regular expression support" ON)
 option(JANSSONPATH_CONSTANT_FOLD "Enable jansson path to do constant folding during evaluation" ON)
+if(NOT WIN32)
+	option(JANSSONPATH_FORCE_PIC "Enable PIC(to link janssonpath_static for a shared library)" OFF)
+endif()
 
 set(COMMON_SRC src/memory.c src/error.c)
 set(COMMON_INC ${PROJECT_BINARY_DIR}/janssonpath_conf.h ${PROJECT_BINARY_DIR}/janssonpath_export.h include/private/common.h include/private/jansson_memory.h include/private/error.h)
@@ -52,7 +55,12 @@ generate_export_header(janssonpath)
 add_library(janssonpath_static STATIC ${ALL_SRC} ${ALL_INC})
 set_target_properties(janssonpath_static PROPERTIES
   COMPILE_FLAGS -DJANSSONPATH_STATIC_DEFINE)
+  
+set_target_properties(janssonpath janssonpath_static PROPERTIES DEBUG_POSTFIX  "d")
 
+if(JANSSONPATH_FORCE_PIC)
+	set_target_properties(janssonpath_static PROPERTIES COMPILE_FLAGS  "-fPIC")
+endif()
 
 if(JANSSONPATH_SUPPORT_REGEX)
 	set(JANSSONPATH_REGEX_ENGINE "system_regex" CACHE STRING "Engine for regular expression support")
