@@ -735,7 +735,7 @@ static jsonpath_t* parse_binary(const char** pw_begin, const char* w_end, int pr
 	return left_node;
 }
 
-JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begin, const char** pjsonpath_end, jsonpath_error_t* error) {
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged_cond(const char* jsonpath_begin, const char** pjsonpath_end, jsonpath_error_t* error, bool classical) {
 	*error = jsonpath_error_ok;
 	const char** pw_begin = &jsonpath_begin;
 	const char* w_end = pjsonpath_end ? *pjsonpath_end : NULL;
@@ -745,7 +745,8 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 	// do ... while(0) works as try, break as throw, below as finally
 	do {
 		if (error->abort) break;
-		ret = parse_binary(&w_begin, w_end, 0, error);
+		if (classical) ret = parse_path(&w_begin, w_end, error);
+		else ret = parse_binary(&w_begin, w_end, 0, error);
 		if (!ret) break;
 		if (!IS_SLICE_EMPTY(word_peek)) {
 			jsonpath_release(ret);
@@ -762,13 +763,37 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begi
 	return ret;
 }
 
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged(const char* jsonpath_begin, const char** pjsonpath_end, jsonpath_error_t* error){
+	return jsonpath_compile_ranged_cond(jsonpath_begin, pjsonpath_end, error, false);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged_classical(const char* jsonpath_begin, const char** pjsonpath_end, jsonpath_error_t* error) {
+	return jsonpath_compile_ranged_cond(jsonpath_begin, pjsonpath_end, error, true);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_cond(const char* jsonpath_begin, jsonpath_error_t* error, bool classical) {
+	return jsonpath_compile_ranged_cond(jsonpath_begin, NULL, error, classical);
+}
+
 JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile(const char* jsonpath_begin, jsonpath_error_t* error) {
-	return jsonpath_compile_ranged(jsonpath_begin, NULL, error);
+	return jsonpath_compile_ranged_cond(jsonpath_begin, NULL, error,false);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_classical(const char* jsonpath_begin, jsonpath_error_t* error) {
+	return jsonpath_compile_ranged_cond(jsonpath_begin, NULL, error, true);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_parse_cond(const char** p_jsonpath_begin, jsonpath_error_t* error, bool classical) {
+	const char* end = NULL;
+	jsonpath_t* ret= jsonpath_compile_ranged_cond(*p_jsonpath_begin, &end, error, classical);
+	*p_jsonpath_begin = end;
+	return ret;
 }
 
 JANSSONPATH_EXPORT jsonpath_t* jsonpath_parse(const char** p_jsonpath_begin, jsonpath_error_t* error) {
-	const char* end = NULL;
-	jsonpath_t* ret= jsonpath_compile_ranged(*p_jsonpath_begin, &end, error);
-	*p_jsonpath_begin = end;
-	return ret;
+	return jsonpath_parse_cond(p_jsonpath_begin, error, false);
+}
+
+JANSSONPATH_EXPORT jsonpath_t* jsonpath_parse_classical(const char** p_jsonpath_begin, jsonpath_error_t* error) {
+	return jsonpath_parse_cond(p_jsonpath_begin, error, true);
 }

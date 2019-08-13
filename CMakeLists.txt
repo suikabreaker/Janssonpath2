@@ -12,7 +12,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/
 # global setting
 if(MSVC)
 # /Wall could generate tons of warning even for standard library
-	add_definitions( "/W4 /D_CRT_SECURE_NO_WARNINGS /nologo /wd4201 /wd4204 /wd4214 /wd4706" )
+	add_definitions( "/W4 /D_CRT_SECURE_NO_WARNINGS /nologo /wd4201 /wd4204 /wd4214 /wd4706 /wd4996" )
 else()
 	set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic -Wmissing-declarations -Wundef -Werror=implicit-function-declaration -Wno-implicit-fallthrough -Wno-deprecated-declarations")
 endif()
