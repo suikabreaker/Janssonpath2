@@ -11,7 +11,7 @@
 #endif
 
 static const jsonpath_error_t jsonpath_error_collection_oprand = {
-	true, 0x80000000Au, "Collection used as oprand in incompatible opration", NULL
+	true, 0x80000000Aull, "Collection used as oprand in incompatible opration", NULL
 };
 
 typedef struct jsonpath_callable_t{

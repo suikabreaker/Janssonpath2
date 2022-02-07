@@ -498,7 +498,7 @@ static path_index_t parse_index(path_indicate path_ind, const char** pw_begin,
         } else {
             index_release(ret);
             error->abort = true;
-            error->code = 0x600000005u;
+            error->code = 0x600000005ull;
             error->reason = "expecting ']'";
             error->extra = w_begin;
             return error_index;
@@ -545,7 +545,7 @@ static jsonpath_t* parse_path(const char** pw_begin, const char* w_end, jsonpath
 	}
 	if(is_empty){
 		error->abort = true;
-		error->code = 0x800000008u;
+		error->code = 0x800000008ull;
 		error->reason = "expecting path";
 		error->extra = w_begin;
 		jsonpath_release(root);
@@ -592,7 +592,7 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 				long value = strtol(number, NULL, radix);
 				if (value > UCHAR_MAX) {
 					error->abort = true;
-					error->code = 0x200000006u;
+					error->code = 0x200000006ull;
 					error->reason = "not representable charactor in escape sequnence";
 					error->extra = (void*)iter;
 					break;
@@ -615,7 +615,7 @@ static json_t* unescaped_string(string_slice slice, jsonpath_error_t* error){
 				if (isalpha(*iter))result = esc_map[*iter - 'a'];
 				if(!result){
 					error->abort = true;
-					error->code = 0x200000004u;
+					error->code = 0x200000004ull;
 					error->reason = "unknown escape";
 					error->extra = (void*)iter;
 					break;
@@ -752,7 +752,7 @@ JANSSONPATH_EXPORT jsonpath_t* jsonpath_compile_ranged_cond(const char* jsonpath
 			jsonpath_release(ret);
 			ret = NULL;
 			error->abort = true;
-			error->code = 0x800000001u;
+			error->code = 0x800000001ull;
 			error->reason = "jsonpath not ended correctly";
 			error->extra = (void*)w_begin;
 		}

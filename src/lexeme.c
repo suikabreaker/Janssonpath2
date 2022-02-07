@@ -25,7 +25,7 @@ static string_slice make_slice(const char* s_begin, const char* s_end) {
     do {                                   \
         mb_next(&s_begin, s_end, error);   \
         check_error();                     \
-        if (error->code == 0x200000001u) { \
+        if (error->code == 0x200000001ull) { \
             ++s_begin;                     \
             continue;                      \
         }                                  \
@@ -39,7 +39,7 @@ void JANSSONPATH_EXPORT jsonpath_set_encode_recoverable(bool value) {
 
 // should we make encode_error recoverable?
 static jsonpath_error_t encode_error(const char* pos) {
-    jsonpath_error_t ret = {!encode_recoverable, 0x200000001u, strerror(errno),
+    jsonpath_error_t ret = {!encode_recoverable, 0x200000001ull, strerror(errno),
                             (void*)pos};
     return ret;
 }
