@@ -296,11 +296,12 @@ static jsonpath_result_t jsonpath_evaluate_impl_path_single(json_t* root, jsonpa
 		}
 		
 		// doesn't matter if it returns -1
-		long long begin = json_array_index_translate(index[0], array_size), end = json_array_index_translate(index[1], array_size);
+		// note that [from, to] is inclusive
+		long long from = json_array_index_translate(index[0], array_size), to = json_array_index_translate(index[1], array_size);
 		
 		ret = make_result_new(json_array(), true, true, node.is_constant && range_json[0].is_constant && range_json[1].is_constant);
 		long long i;
-		for(i=begin;i<end;++i){
+		for(i=from;i<=to;++i){
 			json_array_append(ret.value, json_array_get(node.value, (size_t)i));
 		}
 
